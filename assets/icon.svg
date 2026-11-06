@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#25303f"/>
+      <stop offset="1" stop-color="#11161d"/>
+    </linearGradient>
+    <linearGradient id="route" gradientUnits="userSpaceOnUse" x1="250" y1="0" x2="736" y2="0">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS-style icon body: 824px rounded square on a 1024 canvas -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="184.5" fill="none" stroke="#ffffff" stroke-opacity=".08"/>
+  <!-- one input route splitting into three model tiers -->
+  <g fill="none" stroke="url(#route)" stroke-width="46" stroke-linecap="round">
+    <path d="M250 512 H440"/>
+    <path d="M440 512 C540 512 560 340 680 340"/>
+    <path d="M440 512 H680"/>
+    <path d="M440 512 C540 512 560 684 680 684"/>
+  </g>
+  <circle cx="250" cy="512" r="40" fill="#5eead4"/>
+  <circle cx="736" cy="340" r="56" fill="#a78bfa"/>
+  <circle cx="736" cy="512" r="56" fill="#60a5fa"/>
+  <circle cx="736" cy="684" r="56" fill="#34d399"/>
+</svg>

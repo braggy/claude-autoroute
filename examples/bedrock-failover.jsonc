@@ -1,0 +1,30 @@
+// Anthropic first; Amazon Bedrock (Anthropic-compatible "Mantle" endpoint) if it fails.
+//
+// Setup:
+//   1. In the AWS console, enable the Claude models for your account and create a
+//      Bedrock API key.
+//   2. export AWS_BEARER_TOKEN_BEDROCK="<your key>"   (in your shell profile, not here)
+//   3. Check your region offers the Mantle endpoint and these model IDs.
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "auth": { "type": "passthrough" }
+    },
+    "bedrock": {
+      "type": "anthropic",
+      "baseUrl": "https://bedrock-mantle.us-east-1.api.aws/anthropic",
+      "auth": { "type": "bearer", "env": "AWS_BEARER_TOKEN_BEDROCK" },
+      "forwardBetaHeaders": false,
+      "models": {
+        "haiku": "anthropic.claude-haiku-5-5",
+        "sonnet": "anthropic.claude-sonnet-5-5",
+        "opus": "anthropic.claude-opus-5-5"
+      }
+    }
+  },
+  "failover": {
+    "order": ["anthropic", "bedrock"]
+  }
+}

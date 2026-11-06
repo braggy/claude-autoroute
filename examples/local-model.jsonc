@@ -1,0 +1,36 @@
+// Easy tasks on a free local model (Ollama); Claude for everything else.
+//
+// Setup (same on macOS and Linux; details in HELP.md, "Free local models"):
+//   1. Install Ollama 0.14.3 or later from https://ollama.com/download
+//   2. ollama pull gpt-oss:20b
+//   3. Give it a context length big enough for Claude Code:
+//        printf 'FROM gpt-oss:20b\nPARAMETER num_ctx 32768\n' > Modelfile
+//        ollama create gpt-oss-32k -f Modelfile
+//   4. Use this config, then: autoroute doctor
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "auth": { "type": "passthrough" }
+    },
+    "local": {
+      "type": "anthropic",
+      "baseUrl": "http://127.0.0.1:11434",
+      "auth": { "type": "none" },
+      "forwardBetaHeaders": false,
+      "priceMultiplier": 0
+    }
+  },
+  "local": {
+    "enabled": true,
+    "provider": "local",
+    "model": "gpt-oss-32k",
+    "useFor": ["haiku"],
+    "maxContextTokens": 32000,
+    "fallbackToClaude": true
+  },
+  "failover": {
+    "order": ["anthropic"]
+  }
+}

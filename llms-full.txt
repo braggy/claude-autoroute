@@ -1,0 +1,1123 @@
+# claude-autoroute: complete documentation (version 0.1.0)
+
+> claude-autoroute is a local router for the Claude Code CLI on macOS and Linux. For each message it picks Haiku, Sonnet or Opus (only switching when it saves money after prompt-cache costs), can send easy tasks to a free local model, fails over to backup providers (Amazon Bedrock, Google Vertex AI, gateways), and measures what it saves. It works with Claude API keys, Bedrock, Vertex and company gateways; it refuses Claude Free, Pro and Max subscription logins, and Team/Enterprise logins need admin approval.
+
+This file combines the project's user documentation for AI assistants. Sections are separated by lines starting with "=====".
+When helping someone, ask for the output of `autoroute doctor` and `autoroute diagnostics` (safe to share). Never ask for API keys, config files or logs.
+
+===== Overview (README.md) =====
+
+# claude-autoroute
+
+**Spend less on Claude Code without thinking about models, and keep working when a provider goes down.**
+
+`claude-auto` runs Claude Code through a small local router. For every message you send, the router picks **Haiku**, **Sonnet** or **Opus**. It only switches when the switch saves money once prompt-cache costs are counted. If your provider fails, it moves the request to a backup you configure: Amazon Bedrock, Google Vertex AI, or any gateway that speaks the Anthropic Messages API.
+
+```
+you ──► Claude Code ──► claude-autoroute (127.0.0.1) ──► Anthropic      (primary)
+                          1. what does this message need?    ├─► Bedrock    (backup)
+                          2. is switching worth it?          ├─► Vertex AI  (backup)
+                          3. which provider is healthy?      └─► gateway    (last resort)
+```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/value-dark.png">
+  <img alt="Dashboard headline: money saved, share of messages on a cheaper model, time saved, failover rescues and upgrades, all measured from your own traffic" src="docs/value-light.png">
+</picture>
+
+> **Status: alpha.** Automated tests run the router against mock providers; CI runs them on Linux and macOS.
+> Run `autoroute savings` after a week to see whether it pays off for you.
+> This is an independent community project, not affiliated with or endorsed by Anthropic. You're responsible for using it within your provider's terms.
+
+- **Measured, not claimed.** It records what it actually saved you, from real token counts and response times, and shows it in a dashboard and in `autoroute stats`.
+- **Zero dependencies.** Plain Node.js (20+), nothing to audit beyond this repo.
+- **Private by default.** Prompt text is never written to disk. Credentials are never sent anywhere except to the provider they belong to. No telemetry.
+- **For Claude Code CLI with an API key, Amazon Bedrock or Google Vertex AI.** Any Claude Code arguments pass straight through. See [what's supported](#whats-supported) before installing.
+
+---
+
+## Contents
+
+- [What's supported](#whats-supported)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it decides](#how-it-decides)
+- [What it's doing for you](#what-its-doing-for-you)
+- [The dashboard](#the-dashboard)
+- [Quick settings: what gets used when](#quick-settings-what-gets-used-when)
+- [Free local model for easy tasks](#free-local-model-for-easy-tasks)
+- [Failover to other providers](#failover-to-other-providers)
+- [Commands](#commands)
+- [Configuration](#configuration)
+- [Privacy and security](#privacy-and-security)
+- [Limitations](#limitations)
+- [FAQ](#faq) (more in [HELP.md](HELP.md))
+- [Contributing](#contributing)
+
+## What's supported
+
+Check this first. It decides whether claude-autoroute is for you.
+
+### Apps
+
+| App | Supported? |
+|---|---|
+| **Claude Code CLI** (`claude` in a terminal) on **macOS** or **Linux** | ✅ **Yes.** This is what claude-autoroute is built for. Start it with `claude-auto`. |
+| Claude Code in VS Code, JetBrains, or the Claude desktop app | ❌ Not yet. These start Claude Code their own way, so they don't go through `claude-auto`. Untested. |
+| Claude desktop app (chat, Cowork), claude.ai on the web, mobile apps | ❌ **No.** They talk to Anthropic's own service. The desktop app's third-party inference mode replaces your Claude sign-in and expects an HTTPS gateway, which claude-autoroute isn't. |
+| Windows | ❌ Not supported (untested). |
+
+### Accounts and plans
+
+| How Claude Code is signed in | Supported? |
+|---|---|
+| **Claude API key** (from Claude Console, billed per token) | ✅ **Yes.** Recommended. Per-token billing is where routing saves the most. |
+| **Amazon Bedrock** (Claude models, Bedrock API key) | ✅ **Yes**, as the main provider or as a backup |
+| **Google Vertex AI** (Claude models, gcloud login) | ✅ **Yes**, as the main provider or as a backup |
+| **Your company's LLM gateway** (`ANTHROPIC_BASE_URL` + a gateway token) | ✅ **Yes.** claude-autoroute forwards to it. |
+| **Claude Free, Pro or Max** subscription login | ❌ **No.** Anthropic does not allow third-party tools to route requests through Free, Pro or Max plan credentials ([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)). claude-autoroute detects these logins and refuses them with an explanation, and nothing is forwarded. |
+| **Claude Team or Enterprise** subscription login | ⚠️ **Only with your admin's approval.** Your organization's agreement with Anthropic governs this. Off by default; turn it on with `"subscriptionLogin": "allow-team-enterprise"`. Subscription logins look the same for every plan, so this setting is your confirmation, not something the router can check. |
+| **A free local model** (Ollama, LM Studio, llama.cpp) for easy tasks | ✅ **Optional**, off by default. Easy messages run free on your own computer, and Claude does the rest. It isn't Claude, so answers can differ. See [Free local model](#free-local-model-for-easy-tasks). |
+| Other vendors (e.g. Gemini via LiteLLM) | ⚠️ As a last-resort **backup** only, through a paid gateway. Anthropic doesn't support Claude Code on non-Claude models. |
+
+To see how you're signed in, run `/status` in Claude Code. The dashboard's setup checklist also shows the login type once Claude Code connects.
+
+### Your organization's model rules
+
+If your admin limits which models people can use (Claude Code's `availableModels`), claude-autoroute **never routes to a model outside that list**, not even with a `!opus`-style override. It reads the restriction from:
+
+- managed settings (`/Library/Application Support/ClaudeCode/` on macOS, `/etc/claude-code/` on Linux), including `managed-settings.d/`
+- settings from your organization's admin console, as cached by Claude Code
+- your own `~/.claude/settings.json`
+
+Project-level `.claude/settings.json` restrictions aren't visible to the router, because one router serves all your sessions. Claude Code still enforces them for the model it asks for. You can also limit routing yourself with `allowedTiers`.
+
+## Install
+
+You need **Node.js 20 or later** (Node 18 is end-of-life) on **macOS or Linux**.
+
+```bash
+# in the downloaded or cloned folder
+./install.sh
+```
+
+The installer needs no admin rights: if npm's global folder isn't writable, it installs into `~/.local`. It downloads nothing, and the installed copy doesn't depend on the folder you ran it from. Then it starts the guided setup.
+
+This installs two commands: `claude-auto` (use it in place of `claude`) and `autoroute` (manage the router). Prefer npm directly? Use `npm install -g .` or `npm install -g github:braggy/claude-autoroute`, then run `autoroute setup`.
+
+## Quick start
+
+```bash
+autoroute setup                # a few questions: your login, shadow mode, status line, then a self-test
+claude-auto                    # use exactly like `claude`; all arguments pass through
+autoroute stats                # what it saved (or, in shadow mode, would have saved), plus a trial check
+```
+
+**Start risk-free with shadow mode.** autoroute decides as usual but changes nothing, and records what routing would have saved. That includes cache rebuild costs, so the estimate isn't flattering. Turn routing on with `autoroute shadow off` once you're happy. **On a work laptop with Claude Team or Enterprise,** follow HELP.md: "Set up on a work laptop".
+
+Prefer to configure by hand? `autoroute init` writes a fully commented config file, and `autoroute doctor` checks your setup. `autoroute ui` opens the dashboard.
+
+To make plain `claude` route too, add `alias claude=claude-auto` to your shell profile.
+
+## How it decides
+
+**Step 1: what does this message need?**
+
+| Your message looks like… | Wants |
+|---|---|
+| `git status`, rename, fix a typo, format, run tests | 🟢 Haiku |
+| everyday coding: add a feature, write a test, explain code | 🔵 Sonnet |
+| architecture, refactors, migrations, race conditions, root-cause debugging, security, long or multi-step prompts | 🟣 Opus |
+| `yes`, `go ahead`, `continue` | same as last turn |
+
+The default rules are fast keyword and length checks. Set `"classifier": { "type": "llm" }` to have Haiku classify each new message instead. That's smarter, costs about $0.0001 and adds about 0.5 s per message.
+
+**Step 2: is switching worth it?**
+
+Each model keeps its own prompt cache. In a long chat on Opus or Sonnet 5.5, rebuilding the cache costs about **25 times** as much as reading it. Using real prices and whether each model's cache is still warm, the router estimates this turn's cost on the current model and on the new one, including the cost of coming back later. Then:
+
+- **Small chats:** switch freely. Cache costs are pennies.
+- **Long, active chats:** a single `git status` stays on Opus. A run of easy tasks does drop to Haiku, because the switch cost is spread over the streak.
+- **Moving up a tier:** this is a quality decision, so it's allowed unless the cache rebuild alone costs more than `maxUpgradeCacheCostUSD` ($0.50). In that case the status line suggests `!opus` so you can force it.
+- **Idle for 5+ minutes:** the cache has expired anyway, so switching is free.
+
+**Always:**
+
+- **One model per turn:** Claude's tool calls for a message stay on the same model.
+- **Background calls aren't re-routed:** Claude Code's own Haiku calls (titles, summaries) pass through unchanged.
+- **Overrides:** `!opus`, `!sonnet` or `!haiku` anywhere in a message forces that model. The tag is removed before the model sees it.
+- **Fallbacks:** if a model rejects a request after a switch, the router removes old thinking blocks and retries. If that fails, it falls back to the model Claude Code asked for.
+
+## What it's doing for you
+
+Every number is measured from your own traffic. Estimates are labeled as estimates.
+
+```
+$ autoroute stats
+autoroute since 10/24/2026
+
+  saved              $16.01  (55% cheaper than without autoroute)
+  paid               $13.26  vs $29.27 estimated without it
+  messages           476  (77% handled by a cheaper model)
+  upgraded           7 hard message(s) given a stronger model
+  regrets            3 time(s) you typed !opus/!sonnet right after a cheaper pick (1% of cheaper picks)
+  failover rescues   6 request(s) served by a backup when the primary failed
+  time saved         ~46m (estimated from your measured response times)
+  router overhead    1.5 ms per request
+  cache rebuilds     $0.89 across 58 switch(es), already subtracted
+```
+
+*(Example output from the demo data.)*
+
+| Metric | How it's measured |
+|---|---|
+| **Paid** | Token counts reported by the provider on every response, times the configured prices |
+| **Without autoroute** | The same tokens priced at the model Claude Code asked for. Cache rebuilds caused by switching are priced as the cheap cache reads they would have been. *Estimate:* assumes the same number of tokens. |
+| **Cheaper-model share** | Messages that ran on a cheaper model than requested |
+| **Upgrades** | Messages that ran on a stronger model than requested. They cost more, and they're counted honestly in "paid". |
+| **Regret rate** | How often you typed `!opus` or `!sonnet` straight after the router picked a cheaper model than requested, as a share of cheaper picks. This is the quality check: a high rate means the router is being too thrifty. |
+| **Failover rescues** | Requests a backup provider served after the primary failed |
+| **Time saved** | For each message on a different model, the requested model's average response time (measured on your own traffic, once there are at least 5 samples) minus the actual time. *Estimate.* |
+| **Router overhead** | Time the router spends deciding, per request |
+| **Cache rebuilds** | The extra cost of the first request after each switch, already subtracted from "saved" |
+
+**For other tools:** status bars, tmux, menu-bar widgets and scripts can read `GET http://127.0.0.1:8787/__autoroute/status`. Send the header `x-autoroute-key` with the value from `~/.claude-autoroute/local-key`. It returns today's spending, lifetime savings, provider health, local model speed and the last decision, and never prompt text. The Claude Code status line reads a small file instead, so it stays instant even when the router is busy.
+
+`autoroute stats --json` prints the same numbers as JSON, so you can track them over time or share them in an issue. The JSON contains no prompt text.
+
+## The dashboard
+
+`autoroute ui` opens a dashboard in your browser. It works the same way on macOS and Linux.
+
+- **Overview:** lifetime value (as above), today's spend, provider health with a "retry now" button, a setup checklist with one-click fixes, and a live feed of each message's model and the reason for it.
+- **Savings:** daily chart of paid vs. without autoroute, model mix, switching and failover counts.
+- **Providers:** add Bedrock, Vertex or a gateway from a template, store API keys, test a connection (a 1-token request, under $0.001), reorder failover, and set when to fail over.
+- **Routing:** choose the classifier and switching mode, tune with sliders that explain themselves, and try a prompt to see which model it would get.
+- **Prices:** edit the price table used for decisions and reports.
+- **Help:** searchable answers and troubleshooting (the same text as [HELP.md](HELP.md)), a summary of anything in your setup that needs attention, and **Copy diagnostics**. That copies a support snapshot for bug reports with keys, prompts, web addresses, provider names and your username removed. `autoroute diagnostics` prints the same snapshot.
+
+<details><summary>Screenshots: Savings and Routing (demo data)</summary>
+
+![Savings page: daily paid vs. without autoroute, model mix, switching and failover counts](docs/savings.png)
+
+![Routing page: classifier and switching mode, tuning sliders, try-a-prompt](docs/routing.png)
+
+</details>
+
+**Add it to your Dock:** `autoroute app install` adds an "autoroute" app with its own icon. Clicking it starts the router if needed and opens the dashboard.
+
+| | What you get |
+|---|---|
+| **macOS** | `~/Applications/autoroute.app`, in Launchpad and Spotlight. Finder opens with it selected so you can drag it to the Dock. |
+| **Linux** | A standard app entry with icons, in the app grid or menu. Add `--dock` to pin it to the GNOME dock (Ubuntu's default). On other desktops, pin it from the app menu. |
+
+The app runs `autoroute ui` through your login shell, so the router sees the same environment variables as your terminal. `autoroute app remove` takes it away again. The dashboard's setup checklist also has an **Add app icon** button.
+
+**API keys** go into your operating system's secure storage:
+
+| | Where keys are stored |
+|---|---|
+| **macOS** | Keychain (built in) |
+| **Linux** | Secret Service: GNOME Keyring or KWallet, via `secret-tool`. Install it with `sudo apt install libsecret-tools`, or the equivalent for your distribution. |
+
+The dashboard can't read a key back after it's saved. If no secure storage is available, it says so and suggests an environment variable instead. It never falls back to a plain file.
+
+**On a remote machine over SSH:** `autoroute ui` prints the link and the `ssh -L` command to reach it from your own computer.
+
+**Saving from the dashboard** rewrites `config.jsonc` without comments. The previous version is kept as `config.jsonc.bak`, and every setting stays documented in `config.example.jsonc`.
+
+## Quick settings: what gets used when
+
+The dashboard's Overview has one-click switches, saved instantly. Each also works from a terminal:
+
+| Setting | What it does | Terminal |
+|---|---|---|
+| **Routing: On / Shadow / Paused** | **Shadow** decides but changes nothing, and shows what routing would save. **Paused** sends Claude Code's requests through unchanged; failover still works. | `autoroute shadow on` / `off`, `autoroute pause` / `resume` |
+| **Free local model: On / Off** | Easy tasks on your local model, or not | `autoroute local on` / `off` |
+| **Priority** | One click picks a matching set of settings, and the dashboard shows what each changes: **Lowest cost**, **Balanced** (the default), **Fastest** (Claude only, no cache-cost hesitation), **Best quality** (no Haiku or local model; moves up to Opus freely) | `autoroute priority <name>` |
+| **Providers** | Switch an account off to skip it. Change the order on the Providers page. | `autoroute provider <name> on` / `off` |
+
+**Speed guard for the local model:** the router times the local model and Claude on the same kind of easy task. If the local model is more than **2x slower** on average, easy tasks go back to Claude. Every tenth one re-checks, so it notices when the local model speeds up again. You can change the limit, or set "no limit". The Overview shows both measured times.
+
+## Free local model for easy tasks
+
+Optional. Easy messages (git commands, renames, typos) can run on an open-source model on your own computer, which is free and keeps your code on your machine. Claude keeps everything else.
+
+- **Turn it on** in the dashboard: Providers → **Free local model for easy tasks**. Or use [`examples/local-model.jsonc`](examples/local-model.jsonc).
+- **Setup guide:** the [step-by-step guide and model suggestions](HELP.md#free-local-models) work the same on macOS and Linux. It includes the one setting people miss: Ollama's default context length is too small for Claude Code.
+- **The same cost check applies.** In a long chat with a warm Claude cache, leaving Claude can cost more than it saves, so the message stays on Claude.
+- **Safe by default:**
+  - Your Claude credentials never reach the local server.
+  - Claude-only fields and thinking blocks are removed from requests to it.
+  - Big chats stay on Claude.
+  - If the local model returns an error, the request goes to Claude.
+  - If your organization restricts models, the local model is used only when it's on the allowed list.
+- **Honest numbers:** messages on it are counted as $0 in the statistics, and the dashboard and status line label them "local".
+
+## Failover to other providers
+
+Add providers to your config and list them in `failover.order`. Ready-made examples are in [`examples/`](examples):
+
+| Example | Backup | Credential |
+|---|---|---|
+| [`bedrock-failover.jsonc`](examples/bedrock-failover.jsonc) | Claude on Amazon Bedrock (Anthropic-compatible Mantle endpoint) | Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK` |
+| [`vertex-failover.jsonc`](examples/vertex-failover.jsonc) | Claude on Google Vertex AI | `gcloud auth print-access-token` |
+| [`gateway-other-vendor.jsonc`](examples/gateway-other-vendor.jsonc) | Another vendor via LiteLLM or a similar gateway | gateway key in an env var |
+
+**What triggers failover:** HTTP 500, 502, 503, 504, 529 and network errors (connection refused, DNS failures, timeouts). Add 429 with `"onRateLimit": true`, for example to keep working when you hit your plan's usage limits.
+
+**Cooldown:** a failed provider is skipped for `cooldownSeconds` (300). Chats stay on the backup instead of bouncing, because every switch costs a cache rebuild. After the cooldown, the primary is tried again.
+
+**Credentials stay separate:** your Anthropic API key or login is removed from every request sent to a backup, and each backup gets only its own credential. The config validator refuses to forward your Anthropic credentials to anything but the primary.
+
+**Visible in Claude Code:** when failed over, the status line shows `🟠 failover: bedrock`.
+
+Prefer Claude on Bedrock or Vertex as your first backup. It's the same model, so behavior and tool use don't change, and the only cost is one cache rebuild.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `claude-auto [args]` | Start the router if needed, then run `claude [args]` through it |
+| `autoroute setup` | Guided first-time setup: your login, shadow mode, status line, self-test. Flags: `--login api-key\|enterprise\|cloud`, `--admin-approved`, `--no-shadow`, `--yes` |
+| `autoroute selftest` | Send one tiny message through Claude Code and the router (well under a cent) and check that everything works |
+| `autoroute shadow on` / `off` | Shadow mode: decide but don't change models, and record what routing would save |
+| `autoroute ui` | Open the dashboard (one-time link; `--no-open` just prints it) |
+| `autoroute pause` / `resume` | Stop or restart changing models (failover keeps working) |
+| `autoroute local on` / `off` | Use the free local model for easy tasks, or not |
+| `autoroute priority <name>` | `lowest-cost`, `balanced`, `fastest` or `best-quality` |
+| `autoroute provider <name> on` / `off` | Switch a provider on or off |
+| `autoroute status [--json]` | Router, providers, local model speed, last decision |
+| `autoroute app install [--dock]` / `app remove` | Add or remove the "autoroute" app icon for the dashboard |
+| `autoroute config path` | Show where the config file is |
+| `autoroute version` | Show the installed version |
+| `autoroute llms` | All the docs in one file for an AI assistant |
+| `autoroute diagnostics` | A support snapshot that's safe to share: no keys, prompts, URLs, provider names or paths |
+| `autoroute stats [--json]` | Lifetime value: money and time saved, cheaper-model share, rescues, regret rate, shadow-mode results, and a first-week trial check |
+| `autoroute init` | Write the documented config to `~/.claude-autoroute/config.jsonc` |
+| `autoroute doctor` | Check Node, Claude Code, config, credentials and status line |
+| `autoroute status` | Router health, provider health, last decision |
+| `autoroute savings [days]` | What you paid vs. an estimate without routing (default 7 days) |
+| `autoroute log [lines]` | Follow the decision log, e.g. "wanted haiku, stayed on opus because…" |
+| `autoroute explain "<prompt>"` | Dry run of step 1 for a prompt |
+| `autoroute start` / `stop` / `restart` | Manage the background router |
+| `autoroute statusline install` / `remove` | Add or remove the Claude Code status line |
+
+The status line looks like this:
+
+```
+myproject  🟢 auto:haiku · saves ~$0.07 · today $1.03 (saved $0.44)
+```
+
+## Configuration
+
+The config file is `~/.claude-autoroute/config.jsonc`. It allows comments, and every key is optional. [`config.example.jsonc`](config.example.jsonc) documents every setting with its default. Changes take effect within about 2 seconds without a restart, except `host` and `port`. Run `autoroute doctor` after editing.
+
+The settings people change most:
+
+| Key | Default | Effect |
+|---|---|---|
+| `classifier.type` | `"heuristic"` | `"llm"` for smarter classification |
+| `switching.mode` | `"cost-aware"` | `"always"` follows step 1 and ignores cache cost |
+| `switching.maxUpgradeCacheCostUSD` | `0.5` | Lower means fewer upgrades in long chats |
+| `switching.returnProbability` | `0.5` | Higher means more reluctant to drop down in long chats |
+| `failover.order` | `["anthropic"]` | Providers to try, primary first |
+| `failover.onRateLimit` | `false` | Also fail over on 429 |
+| `prices` | Nov 2026 list prices | Update when prices change |
+
+Environment variables:
+
+| Variable | Effect |
+|---|---|
+| `AUTOROUTE_HOME` | Runtime folder (default `~/.claude-autoroute`) |
+| `AUTOROUTE_PORT` | Overrides `port` |
+| `AUTOROUTE_UPSTREAM` | Overrides the primary provider's `baseUrl` |
+| `AUTOROUTE_DEBUG=1` | Also print the log to stderr when running `autoroute serve` |
+
+If `ANTHROPIC_BASE_URL` is already set (you use a gateway), `claude-auto` forwards to it.
+
+## Privacy and security
+
+- **Local only.** The router listens on `127.0.0.1` and makes no network requests except to the providers you configure. There is no telemetry.
+- **Requests must carry a local key.** Each request needs a random secret header that `claude-auto` adds. Other programs on your machine can't use the router to spend your backup credentials.
+- **Prompts are never stored.** Prompt text isn't written to disk. The log records the chosen model and the reason, and stats record token counts. Set `logPromptSnippets` to log the first 60 characters of each prompt for debugging.
+- **Owner-only files.** The runtime folder and its files are readable only by you (`0700` / `0600`).
+- **No secrets in config.** Credentials come from the OS keychain, environment variables or commands, never from the config file. `autoroute doctor` warns if you paste one in.
+- **The dashboard is locked down.** It opens only through a one-time link from `autoroute ui`, accepts requests only from this machine, and has CSRF and DNS-rebinding protection and a strict Content Security Policy. See [SECURITY.md](SECURITY.md).
+- **Credentials only go to their own provider.** See [Failover](#failover-to-other-providers).
+
+See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
+
+## Limitations
+
+- **A reply already in progress can't fail over.** If a provider fails partway through streaming a reply, that reply is lost. Claude Code's retry goes to the backup.
+- **Some endpoints only go to the primary.** Requests other than `/v1/messages`, such as token counting, aren't failed over.
+- **Claude Code's model label doesn't change.** It keeps showing the model you launched with. The status line shows the real pick.
+- **Savings are estimates.** "Without routing" assumes the original model would have used the same number of tokens.
+- **macOS and Linux only.** Windows is untested.
+- **Backups bill separately.** Bedrock, Vertex and gateways each charge per token on their own accounts.
+- **Claude Code CLI only.** See [What's supported](#whats-supported).
+
+## FAQ
+
+The most common questions are below. [HELP.md](HELP.md) has the full set, plus troubleshooting and a glossary. It's also built into the dashboard.
+
+**Using an AI assistant?** [`llms-full.txt`](llms-full.txt) has all the docs in one file for AI assistants, and [`llms.txt`](llms.txt) is the short index (the [llms.txt](https://llmstxt.org) convention). The dashboard's Help page has a **Copy help for an AI assistant** button, and `autoroute llms` prints the file.
+
+**Does switching models waste tokens?**
+It can, which is why the router counts the cost first. See [How it decides](#how-it-decides). `autoroute savings` reports the cache-rebuild cost of every switch, already subtracted from your savings.
+
+**Can I use a free tier of another vendor for simple tasks?**
+You can configure it, but it's rarely worth it. Haiku 5.5 already costs a fraction of a cent per simple turn, switching vendors throws away the prompt cache, and free tiers may use your prompts, which here means your code, for training.
+
+**Does it work with a Pro or Max subscription?**
+No. Anthropic doesn't allow third-party tools to route requests through Free, Pro or Max plan credentials, so claude-autoroute refuses those logins. Use a Claude API key, Bedrock or Vertex. Team and Enterprise plans need your admin's approval. See [What's supported](#whats-supported).
+
+**Can I use it with the Claude desktop app?**
+No. The desktop app's chat and Cowork talk to Anthropic directly, and Claude Code inside the desktop app or an IDE doesn't start through `claude-auto`. claude-autoroute is for the Claude Code CLI on macOS and Linux.
+
+**Why not a Claude Code hook?**
+Hooks can add context or block a prompt, but they can't change the model. A local proxy, set through `ANTHROPIC_BASE_URL` (Claude Code's documented gateway setting), can.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: no runtime dependencies, tests for every behavior change, and `npm test && npm run check:secrets` must pass.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE). Copyright (c) 2026 Steve Bragg.
+
+Free for personal use, study, testing and other noncommercial purposes. Any commercial use, including selling it, bundling it in a product or offering it as a service, needs a separate licence: open an issue to ask.
+
+===== Help (HELP.md) =====
+
+# Help
+
+Answers to common questions, fixes for common problems, and the words this project uses. This page is also built into the dashboard (`autoroute ui` → **Help**).
+
+## Getting started
+
+### What does claude-autoroute do?
+
+It sits between Claude Code and the model provider, on your own computer. For each message you send, it picks the cheapest model that can handle it (Haiku, Sonnet or Opus). It only switches when switching actually saves money. If your provider has an outage, it can send requests to a backup you set up.
+
+### How do I start?
+
+About five minutes, and nothing changes until you decide.
+
+1. **Check how Claude Code signs you in.** Run `claude`, type `/status`, and look at the login line. If it's a personal **Pro or Max** plan, stop here: autoroute can't be used with those.
+2. **Install.** In the downloaded folder, run `./install.sh`. You don't need admin rights.
+3. **Answer the setup questions.** The installer starts `autoroute setup`. Press Enter to accept the recommended answers. It turns on **shadow mode** (nothing changes yet), adds the status line, and runs a self-test.
+4. **Use Claude Code as normal, but start it with `claude-auto`.** All the usual arguments work.
+5. **After a day,** run `autoroute stats` to see what routing would have saved. If you like it, run `autoroute shadow off`.
+
+On a work laptop with Claude Team or Enterprise, read "Set up on a work laptop (Claude Team or Enterprise)" first.
+
+### Set up on a work laptop (Claude Team or Enterprise)
+
+If Claude Code signs you in with your company's Claude account, follow these steps.
+
+1. **Get your admin's OK first.** Team and Enterprise logins may only go through a tool like this if your organization allows it. Until you confirm that, autoroute refuses the login and sends nothing. "What do I ask my admin?" has a message you can send.
+2. **Check Node.js.** Run `node -v`. You need version 20 or later. If your company uses a web proxy (`HTTPS_PROXY` is set), you need 22.21 or later.
+3. **Install:** in the downloaded folder, run `./install.sh`. If it asks you to add a folder to your PATH, run the line it shows, then open a new terminal.
+4. **Set up:** when asked "How does Claude Code sign you in?", choose **Company login: Claude Team or Enterprise**. When asked if your admin approved it, answer **y** only if they have. Accept the other defaults.
+5. **Self-test:** it sends one tiny message through Claude Code, at well under a cent. It should end with "All good". If it doesn't, see "The self-test failed".
+6. **Day 1, shadow mode:** start Claude Code with `claude-auto` and work as usual. Nothing changes: the status line shows 👁 and what routing would have picked.
+7. **Day 2, turn it on** if the numbers look good: `autoroute shadow off`. Then follow "Your first week: how do I know it's working?".
+
+To undo at any time, run plain `claude` instead of `claude-auto`. Or run `autoroute pause`, which sends everything through unchanged.
+
+### What do I ask my admin?
+
+Something like this, which you can copy and edit:
+
+> I'd like to use claude-autoroute, a source-available tool that runs only on my laptop, with Claude Code. It picks a cheaper Claude model (Haiku or Sonnet) for simple messages, to make our Claude Code usage go further. It runs at 127.0.0.1 and sends requests only to Anthropic, using my normal Claude Code login. It doesn't store prompts or code, and it follows our organization's allowed-models settings. Is it OK to use it with my Enterprise login?
+
+If they say no, you can still use autoroute with a Claude API key from the Claude Console, if your company provides one.
+
+### What is shadow mode?
+
+It's a no-risk trial. autoroute decides which model it would use for each message, but sends every message with the model Claude Code asked for. It records what that would have cost, and you see the result in `autoroute stats` and on the dashboard.
+
+The estimate is cautious: whenever routing would have switched models, it counts the cost of rebuilding the prompt cache, so it doesn't flatter itself. Your `!opus` / `!sonnet` / `!haiku` still work as usual.
+
+- **Turn it on:** `autoroute shadow on`, or **Routing → Shadow** on the dashboard.
+- **Turn routing on:** `autoroute shadow off`, or **Routing → On**.
+
+About 30 messages give a reliable picture.
+
+### How do I run the self-test?
+
+Run `autoroute selftest`. It sends one tiny message ("reply with AUTOROUTE-OK") through your real Claude Code and the router, using your normal login. Then it checks:
+
+- that the router is running and saw the message
+- which login Claude Code uses
+- that a reply came back
+- whether the status line is installed
+
+It costs well under a cent. Run it whenever something seems off, for example after updating Claude Code or changing networks.
+
+### Your first week: how do I know it's working?
+
+Run `autoroute stats`. Once there are 30 routed messages, the **Trial check** at the bottom compares your numbers with four simple targets:
+
+| Target | Why it matters |
+|---|---|
+| **Saves 20% or more** | It's worth having |
+| **Regret rate under 5%** | Cheaper models are good enough for what you send them |
+| **Router overhead under 5 ms** | You won't notice it |
+| **No router errors** | It never gets in your way |
+
+What to do with the result:
+
+- **"On track":** keep it on. Check once a week.
+- **Regret rate too high:** choose `autoroute priority best-quality`, which never uses Haiku, or add words you use for hard tasks to `classifier.opusKeywords`.
+- **Savings below target:** you may mostly do hard work that needs Opus anyway. Keep it as an outage backup, or uninstall it. Both are fine outcomes.
+- **Router errors:** run `autoroute log` and `autoroute diagnostics`, and report the problem. Meanwhile, `autoroute pause` makes it pass everything through unchanged.
+
+### Is it for me?
+
+It's built for the **Claude Code CLI** on **macOS or Linux**, signed in with a **Claude API key**, **Amazon Bedrock**, **Google Vertex AI**, or a **company LLM gateway**.
+
+It doesn't work with Claude **Free, Pro or Max** subscription logins: Anthropic doesn't allow third-party tools to route those. **Team or Enterprise** logins need your admin's approval. It doesn't work with the Claude desktop app, claude.ai on the web, or the mobile apps. The README's "What's supported" section has the full list.
+
+## Using it
+
+### Why did it pick this model?
+
+The **Recent messages** list on the Overview page shows the model each message got, and why. To test a prompt without sending it, use **Try a prompt** on the Routing page, or run `autoroute explain "your prompt"`.
+
+Two steps decide the model:
+
+1. **What does the message need?** Easy tasks (git commands, renames, typos) want Haiku. Everyday coding wants Sonnet. Hard tasks (architecture, refactors, tricky bugs) want Opus.
+2. **Is switching worth it?** See "Why didn't it switch to a cheaper model?" below.
+
+### How do I force a particular model?
+
+Put `!opus`, `!sonnet` or `!haiku` anywhere in your message. The tag is removed before Claude sees it. Your organization's model rules still apply.
+
+### Why didn't it switch to a cheaper model?
+
+Each model keeps its own **prompt cache**: a saved copy of the conversation that makes re-reading it cheap. When you switch models, the new model has to read the whole conversation at full price. In a long, active chat that can cost more than the cheaper model saves.
+
+So a single easy message in a long Opus chat stays on Opus. A run of easy messages does switch, because the one-time cost is spread across them. The reason is shown in the Recent messages list, for example "staying on opus: switching costs ~$0.11 more". You can tune this on the Routing page.
+
+### How do I choose what gets used when?
+
+Use **Quick settings** on the dashboard's Overview. Every change is saved instantly.
+
+- **Routing: On / Shadow / Paused.**
+  - **Shadow** changes nothing, but shows what routing would save. See "What is shadow mode?". From a terminal: `autoroute shadow on` or `autoroute shadow off`.
+  - **Paused** sends Claude Code's requests through unchanged. Failover to a backup still works. From a terminal: `autoroute pause` and `autoroute resume`.
+- **Free local model: On / Off.** From a terminal: `autoroute local on` or `autoroute local off`.
+- **Priority:** picks a sensible set of settings in one click. The description under the buttons says exactly what each one does. From a terminal: `autoroute priority <name>`.
+  - **Lowest cost:** uses the local model for easy tasks even when it's slower, and switches to cheaper models more readily.
+  - **Balanced** (the default): switches only when it saves money, and uses the local model only while it's no more than twice as slow as Claude.
+  - **Fastest:** keeps everything on Claude, with no local model, and always uses the model each message needs.
+  - **Best quality:** never uses Haiku or the local model, and moves up to Opus whenever a message needs it. It costs more.
+- **Providers, in order of use:** switch an account off to skip it, or back on. From a terminal: `autoroute provider <name> off`. To change the order, use the arrows on the Providers page.
+
+You can fine-tune any of these afterwards on the Routing and Providers pages.
+
+### Will the local model slow my chats down?
+
+It can, so claude-autoroute measures it. It times the local model and Claude on the same kind of easy task, using your own messages. If the local model is more than **2x slower** than Claude on average (you can change this on the Providers page), easy tasks go back to Claude. Every tenth easy task still tries the local model, so it notices when it speeds up again.
+
+The Overview shows both average times once there are at least 5 tasks on each. Set the limit to **no limit** to always use the local model, or choose the **Fastest** priority to keep everything on Claude.
+
+### Can other tools show autoroute's stats?
+
+Yes. Besides the Claude Code status line, there's a read-only status address for scripts, terminal status bars and menu-bar widgets: `http://127.0.0.1:8787/__autoroute/status`. It reports:
+
+- today's spending and the lifetime savings
+- provider health
+- local model speed
+- the last decision
+
+It needs the header `x-autoroute-key` with the value from `~/.claude-autoroute/local-key`, so only programs that can read that file get in. It never includes prompt text. From a terminal: `autoroute status --json`.
+
+### Why does Claude Code still show the model I started with?
+
+Claude Code doesn't know the router changed the model. The **status line** shows the router's actual pick. Install it from the setup checklist, or run `autoroute statusline install`.
+
+### What does the status line show?
+
+The status line is the line at the bottom of Claude Code. With claude-autoroute's status line installed, it looks like this:
+
+```
+myproject  🟢 auto:haiku · saves ~$0.07 · today $1.03 (saved $0.44)
+```
+
+From left to right:
+
+- **The project folder name.**
+- **The model your last message actually ran on:** 🟢 Haiku, 🔵 Sonnet or 🟣 Opus.
+- **🏠 local** when it ran on your free local model, or **🟠 failover** and the provider's name when a backup handled it.
+- **The reason**, shortened, for example "saves ~$0.07" or "staying on opus: switching costs …".
+- **Today's spending**, and how much less that is than without autoroute.
+
+Two other states you may see:
+
+- **👁 shadow · would use haiku · would save $0.40 today** means shadow mode is on. Claude Code keeps its own model, and this shows what routing would have picked. Turn routing on with `autoroute shadow off`.
+- **⏸ auto-route paused** means routing is paused. Undo with `autoroute resume` or the Quick settings.
+- **auto-route off** means this Claude Code session didn't start through `claude-auto`, so the router isn't involved.
+
+It updates after each message and reads a small file the router keeps up to date, so it never slows Claude Code down.
+
+### How do I add or remove the status line?
+
+- **Add:** run `autoroute statusline install`, or click **Install status line** in the dashboard's setup checklist. Then start a new Claude Code session with `claude-auto`.
+- **Remove:** run `autoroute statusline remove`. This only removes claude-autoroute's status line, never one of your own.
+
+It's stored in Claude Code's settings file (`~/.claude/settings.json`) as the `statusLine` setting.
+
+### I already have my own status line. Can I keep it?
+
+Yes. claude-autoroute won't replace a status line you already have. To show both, call claude-autoroute's script from your own. Claude Code sends status information to your script on standard input, so pass the same input along:
+
+```
+input=$(cat)
+echo "$input" | node "/path/to/claude-autoroute/bin/statusline.mjs"
+```
+
+`autoroute statusline install` prints the exact command for your installation when it finds an existing status line.
+
+### Does it slow Claude Code down?
+
+Barely. The router measures its own overhead, shown on the Overview page; it's typically a few milliseconds per request. Cheaper models also tend to answer faster.
+
+### What happens if Anthropic has an outage?
+
+If you've added a backup provider (Bedrock, Vertex or a gateway), requests move to it automatically. The failed provider is skipped for a cooldown period (5 minutes by default), so your chat doesn't bounce back and forth. Without a backup, you see the provider's error as usual.
+
+A reply that's already being written when the outage hits can't move over. Claude Code's retry goes to the backup.
+
+### Can I use it in VS Code, JetBrains or the Claude desktop app?
+
+Not yet. Those apps start Claude Code their own way, so requests don't go through `claude-auto`. Only the Claude Code CLI in a terminal is supported.
+
+## Free local models
+
+### Can I use a free local model?
+
+Yes, for easy tasks. It's optional and off by default. Easy messages (git commands, renames, typos) can run on a model on your own computer through Ollama, LM Studio or llama.cpp, while Claude handles everything else.
+
+What you get: those tasks cost nothing, and your code stays on your machine. What to know: a local model isn't Claude, and Anthropic doesn't support Claude Code on other models, so answers can differ. You also need a fairly powerful computer. If the local model returns an error, the request goes to Claude automatically.
+
+### How do I set up a free local model?
+
+These steps work the same way on macOS and Linux.
+
+1. **Check your computer.** You need at least 16 GB of memory: unified memory on Apple Silicon Macs, or graphics-card memory on other machines. With less, easy tasks are better left on Haiku, which costs a fraction of a cent each.
+2. **Install Ollama 0.14.3 or later** from https://ollama.com/download. On a Mac, install the app. On Linux, use the install command shown on that page; it's a good habit to read a script before running it. Check the version with `ollama --version`. Older versions don't handle Claude Code's tool calls properly.
+3. **Download a model.** See "Which local model should I use?" below. For example: `ollama pull gpt-oss:20b`
+4. **Give it room for Claude Code's instructions.** Claude Code sends a long set of instructions with every request, much more than Ollama's default of 4,096 tokens on most computers. Make a copy of the model with a larger context length:
+
+```
+printf 'FROM gpt-oss:20b\nPARAMETER num_ctx 32768\n' > Modelfile
+ollama create gpt-oss-32k -f Modelfile
+```
+
+5. **Connect it.** Run `autoroute ui`, open **Providers**, and turn on **Free local model for easy tasks**. Enter the model name from step 4 (`gpt-oss-32k`), click **Save changes**, then **Test local model**.
+6. **Use Claude Code as usual** with `claude-auto`. Easy messages show **Local model** in the Overview's Recent messages, and the status line shows 🏠 local.
+
+### Which local model should I use?
+
+These are starting points as of November 2026. Local models improve quickly, so check Ollama's model library for newer ones. Claude Code needs **tool calling** (the "tools" label in Ollama's library), so skip models without it.
+
+- **16 GB of memory:** `gpt-oss:20b`
+- **24 to 32 GB:** `qwen3-coder:30b` or `devstral-small-2:24b`. Newer models in this size, such as Qwen3.8 27B, are also worth trying.
+- **64 GB or more:** larger models can handle everyday tasks too. Turn on **Everyday tasks too** only after you've tried it for a while.
+- **Less than 16 GB:** keep easy tasks on Haiku.
+
+A larger context length uses more memory. 32,768 tokens is a good balance for easy tasks. Keep **Largest chat to send to it** at or below the context length you chose.
+
+### My local model gives empty, strange or cut-off answers
+
+This is almost always the context length.
+
+1. Make sure you created the larger-context copy (step 4 of the setup) and entered **its** name, not the original model's.
+2. Make sure **Largest chat to send to it** on the Providers page isn't bigger than that context length.
+3. Make sure the model supports tool calling and that Ollama is 0.14.3 or later.
+
+The router can tell when the local model returns an error, and switches to Claude. It can't tell when the model gives a poor answer. If the quality isn't good enough for you, turn the local model off or try a stronger one.
+
+### Does a local model keep my code private?
+
+Yes, as long as the model runs on your computer: nothing leaves your machine. Be careful with Ollama's **cloud** models (names ending in `:cloud`). They run on Ollama's servers, so your code is sent there.
+
+### Can I use LM Studio or llama.cpp instead of Ollama?
+
+Yes, if the version you use accepts Anthropic-style requests (`/v1/messages`). LM Studio does from version 0.4.1, and its address is usually `http://127.0.0.1:1234`. Set the server address and model name on the Providers page to match.
+
+### How much does a local model save?
+
+Usually not much money: easy tasks on Haiku already cost a fraction of a cent each. The main benefits are privacy, working offline, and lower usage. The Overview shows how many messages ran free on your local model, and the savings figures include them.
+
+## Money and statistics
+
+### How are the savings calculated? Are they real?
+
+**"Paid"** is real. It comes from the token counts your provider reports on every response, multiplied by the prices on the Prices page.
+
+**"Without autoroute"** is an estimate. It prices the same tokens at the model Claude Code asked for. It assumes that model would have used the same number of tokens, which is close but not exact.
+
+The extra cost of every switch (cache rebuilds) is already subtracted. Upgrades to a stronger model, which cost more, are counted too.
+
+### What is the regret rate?
+
+It's how often a cheaper model wasn't good enough. Each time you type `!opus` or `!sonnet` straight after the router picked a cheaper model than Claude Code asked for, that's one regret. The rate is regrets divided by all the cheaper picks.
+
+- **Under 5%:** the router is choosing well.
+- **Above 10%:** the dashboard shows it in amber. Pick the **Best quality** priority, or add words you often use for hard tasks to `classifier.opusKeywords`.
+
+Savings only count if the answers stay good, so check this alongside "saved".
+
+### Why does "time saved" say "collecting"?
+
+Time saved compares your actual response times with the requested model's **measured** average. It needs at least 5 responses from that model before it shows a number, so the estimate is based on your own data, not guesses.
+
+### My costs look wrong. What should I check?
+
+Check the **Prices** page. Prices change, and the built-in ones are list prices from this release. If your organization has negotiated rates, enter them there. Backups that cost more, such as regional pricing, can use a **price multiplier** on the Providers page.
+
+### I'm on a subscription plan. What do the dollar figures mean?
+
+They're calculated at API list prices, as if you paid per token. They're still a fair way to compare how much routing reduces usage.
+
+### I'm on Claude Enterprise with credit or spend limits. Does this help?
+
+Usually, yes. On Team and Enterprise plans, Claude Code usage comes out of each member's allowance, or out of your organization's usage credits. When you reach a spend limit, Claude Code stops until the limit resets or an admin raises it.
+
+Bigger models generally use your allowance faster than smaller ones. Running easy messages on Haiku or Sonnet, instead of Opus, should make the same allowance last longer.
+
+Two things to know:
+
+- **The dollar figures are estimates at API list prices,** not your company's rates or credit units. Use them to compare with and without routing. Your admin's usage page is the source of truth for what was actually used.
+- **Start in shadow mode** to see the likely effect before changing anything.
+
+## Privacy and security
+
+### Is my code or prompt stored or sent anywhere?
+
+Your prompts go only to the model provider, exactly as they would without claude-autoroute. The router never writes prompt text to disk. The log records which model was chosen and why, and the statistics record token counts and timings. Nothing is sent to the authors of this project; there's no telemetry.
+
+### Where are my API keys stored?
+
+Keys you enter in the dashboard go into your operating system's secure storage: **macOS Keychain**, or the **Secret Service** keyring (GNOME Keyring or KWallet) on Linux. They're never written to a file, and the dashboard can't read them back. You can also use environment variables or a command that prints a token.
+
+### Can other programs or websites use the router?
+
+No. The router only answers on your own machine, and every request needs a secret key that `claude-auto` adds. The dashboard opens only through a one-time link from `autoroute ui`. It refuses requests from other websites.
+
+### Will it use a model my company has blocked?
+
+No. If your admin limits models (Claude Code's `availableModels` setting), the router only routes to allowed models, even when you use `!opus`. The setup checklist shows which restrictions are being honored.
+
+## Troubleshooting
+
+### "Router failed to start"
+
+Something else may be using port 8787. Change `port` in the config (`autoroute config` shows where it is), then run `autoroute restart`. The startup error is in `~/.claude-autoroute/router.out`.
+
+### The installer says it doesn't have permission
+
+The installer handles this itself: if npm can't write to its global folder, it installs into `~/.local` instead, with no admin rights needed. If it still fails, copy the message it printed and run `./install.sh` again. As a last resort, install by hand: `npm install --global --prefix ~/.local .`
+
+### "autoroute: command not found" after installing
+
+The folder autoroute was installed into isn't on your PATH yet. The installer printed the line to fix it, usually:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+Use `~/.bashrc` if you use bash. Then open a new terminal window.
+
+### The self-test failed
+
+Read the line starting with `->`: it says what to do. The most common causes:
+
+- **"autoroute refused it"**: Claude Code uses a Team or Enterprise login, and setup didn't record your admin's approval. Once your admin has approved it, run `autoroute setup --login enterprise --admin-approved`.
+- **"`claude` isn't on your PATH"**: install Claude Code, or open a new terminal.
+- **"no reply"** or an API error: run `claude -p hello` without autoroute. If that fails too, the problem is Claude Code, your login or your network, not autoroute.
+- **"Company proxy … can't use it"**: your Node.js is too old to use your company's web proxy. Install Node.js 22.21 or later.
+- **"didn't go through the router"**: something forces Claude Code to another address. Check `ANTHROPIC_BASE_URL` in your shell profile and in `~/.claude/settings.json`.
+
+### My company uses a web proxy or inspects HTTPS traffic
+
+autoroute uses the same settings as Claude Code, as long as they're set in your shell (for example in `~/.zshrc`), not only inside Claude Code's own settings:
+
+- **A web proxy (`HTTPS_PROXY`)** is used automatically. This needs Node.js 22.21+ or 24.5+, and `autoroute doctor` tells you if yours is too old.
+- **A company certificate (`NODE_EXTRA_CA_CERTS`)** is passed on to the router.
+
+After changing these, run `autoroute restart`.
+
+### Claude Code says the router can't carry a subscription login
+
+Claude Code is signed in with a Claude subscription, and Anthropic doesn't allow third-party tools to route Free, Pro or Max credentials. Your options:
+
+- Sign in with a Claude API key instead: run `/logout` in Claude Code, then set `ANTHROPIC_API_KEY`.
+- Use Bedrock or Vertex.
+- Run plain `claude` without claude-autoroute.
+
+On a **Team or Enterprise** plan whose admin has approved routing tools, run `autoroute setup --login enterprise --admin-approved`. That sets `"subscriptionLogin": "allow-team-enterprise"` for you.
+
+### "Missing or wrong local key"
+
+Claude Code reached the router without the secret key, usually because it was started with plain `claude` while `ANTHROPIC_BASE_URL` still pointed at the router. Start it with `claude-auto`, or remove the router address from `ANTHROPIC_BASE_URL`.
+
+### The dashboard link says it has expired
+
+Dashboard links work once, for 2 minutes. Run `autoroute ui` again. Sessions also end when the router restarts.
+
+### A backup provider shows as down
+
+1. On the Providers page, click **Test** next to it. The result explains what's wrong.
+2. Check its credential: a saved key, an environment variable, or a command such as `gcloud auth print-access-token`.
+3. If you use environment variables, restart the router afterwards (`autoroute restart`) so it sees them.
+4. Run `autoroute doctor` for a full check.
+
+### Keys can't be saved on Linux
+
+The dashboard uses the Secret Service keyring through `secret-tool`. Install it (Debian/Ubuntu: `sudo apt install libsecret-tools`; Fedora: `sudo dnf install libsecret`) and make sure your keyring is unlocked. Over SSH there's usually no keyring; use an environment variable instead.
+
+### The status line doesn't show or says "auto-route off"
+
+1. **Check it's installed:** run `autoroute doctor`. If it says the status line isn't installed, run `autoroute statusline install`.
+2. **Start Claude Code with `claude-auto`,** not plain `claude`. A session started without it shows "auto-route off".
+3. **Start a new session** after installing. Claude Code reads its settings when a session starts.
+4. **If you have your own status line,** claude-autoroute left it in place. See "I already have my own status line. Can I keep it?"
+5. **If it shows "auto-route on" but no model yet,** send a message first. The status line fills in after the router handles one.
+
+### The app icon does nothing
+
+The app remembers where Node.js and claude-autoroute were installed. If either moved (for example after a Node.js upgrade with nvm), run `autoroute app install` again.
+
+### The model never changes in a long chat
+
+That's usually the cost check working as intended (see "Why didn't it switch to a cheaper model?"). To switch more readily, lower **Chance you'll need the bigger model again** on the Routing page. To always follow the classifier, set **Is switching worth it?** to **Always switch**.
+
+### How do I stop or uninstall it?
+
+- Stop the router: `autoroute stop`
+- Remove the app icon: `autoroute app remove`
+- Remove the status line: `autoroute statusline remove`
+- Uninstall: `npm uninstall -g claude-autoroute`, then delete `~/.claude-autoroute` if you want to remove your settings and statistics.
+
+## Words used here
+
+### Tier
+
+The model size: **Haiku** (fastest, cheapest), **Sonnet** (everyday) or **Opus** (most capable).
+
+### Prompt cache
+
+A provider-side saved copy of the conversation so far. Reading from it costs a small fraction of the normal price. Each model has its own cache, and it expires after about 5 minutes without use.
+
+### Cache rebuild
+
+The one-time full-price read when a different model (or provider) has to read the conversation from scratch.
+
+### Primary and backup providers
+
+The **primary** is where requests normally go. **Backups** take over, in order, when the ones above them fail.
+
+### Failover and cooldown
+
+**Failover** is moving requests to a backup after a failure. The **cooldown** is how long the failed provider is skipped before it's tried again.
+
+### Local model
+
+An open-source model running on your own computer, through Ollama, LM Studio or llama.cpp. claude-autoroute can send easy tasks to it for free. It isn't Claude.
+
+### Passthrough
+
+The provider gets the credential Claude Code is using: your API key or gateway token. Only the primary provider can use passthrough.
+
+## Getting more help
+
+### Can I ask my own AI assistant for help with claude-autoroute?
+
+Yes. All the documentation is available in one file made for AI assistants, `llms-full.txt`. Give it to any assistant (Claude, ChatGPT, a local model) and ask your question.
+
+- **In the dashboard:** on the Help page, click **Copy help for an AI assistant**, then paste it into your assistant before your question.
+- **In a terminal:** `autoroute llms` prints it. On macOS, `autoroute llms | pbcopy` copies it.
+- **In the project:** `llms-full.txt` and the shorter index `llms.txt` are at the top of the repository.
+
+For better answers, also paste the output of `autoroute doctor` and `autoroute diagnostics`. Both are safe to share. Never paste API keys, your config file or logs into an AI assistant.
+
+### How do I report a problem?
+
+Open an issue on the project's GitHub page. On the dashboard's Help page, use **Copy diagnostics** and paste the result into the issue. It contains versions, settings and health checks, with keys, prompts, URLs and your username removed. Please don't paste logs or config files that contain keys.
+
+### How do I report a security issue?
+
+Privately, please. Use **Report a vulnerability** on the project's GitHub Security tab, not a public issue. See SECURITY.md.
+
+===== Configuration reference (config.example.jsonc) =====
+
+```jsonc
+// claude-autoroute configuration
+// ------------------------------------------------------------------------------
+// Copy to ~/.claude-autoroute/config.jsonc (`autoroute init` does this), then run
+// `autoroute doctor`. Comments and trailing commas are allowed.
+//
+// Every key is optional: anything you leave out uses the built-in default shown
+// here. Changes are picked up within ~2 seconds; no restart needed (except
+// `host`/`port`).
+//
+// SECRETS: never paste API keys into this file. Use "env" (read an environment
+// variable) or "command" (run a command that prints a token) instead.
+// ------------------------------------------------------------------------------
+{
+  // Where the router listens. Keep it on 127.0.0.1 (this machine only).
+  "host": "127.0.0.1",
+  "port": 8787,
+  // Must stay on this machine unless you set "allowNonLocalHost": true (not recommended).
+
+  // claude-auto sends a random secret header (stored in ~/.claude-autoroute/local-key);
+  // requests without it are rejected, so other programs on this machine can't use
+  // the router to spend your backup-provider credentials.
+  "requireLocalKey": true,
+
+  // ---- Accounts ----------------------------------------------------------------
+  // Claude subscription logins. Anthropic does not allow third-party tools to route
+  // requests through Claude Free, Pro or Max plan credentials, so they're refused.
+  // Set "allow-team-enterprise" ONLY if you're on a Team or Enterprise plan and your
+  // admin has approved routing tools. Subscription logins look the same for every
+  // plan, so this setting is your confirmation.
+  "subscriptionLogin": "refuse",
+
+  // Pause routing: Claude Code's requests go through unchanged (failover still works).
+  // Quick switch: `autoroute pause` / `autoroute resume`, or the dashboard.
+  "paused": false,
+
+  // Shadow mode: the router decides as usual but keeps the model Claude Code asked for, and
+  // records what routing WOULD have cost (cache rebuilds included). A no-risk way to see the
+  // likely savings before letting it change anything. Your !opus / !sonnet / !haiku still work.
+  // Quick switch: `autoroute shadow on|off`, or the dashboard.
+  "shadow": false,
+
+  // The last priority preset chosen in the dashboard or with `autoroute priority`:
+  // lowest-cost, balanced, fastest or best-quality. A preset sets the switching,
+  // allowedTiers and local settings below; this field is just a label.
+  "priority": "balanced",
+
+  // Tiers the router may use. Your organization's availableModels (Claude Code
+  // managed settings) are always honored on top of this.
+  "allowedTiers": ["haiku", "sonnet", "opus"],
+
+  // Include the first 60 characters of each prompt in router.log. Off by default.
+  "logPromptSnippets": false,
+
+  // Safety and housekeeping limits.
+  "limits": {
+    "maxRequestMB": 50,   // larger requests from Claude Code are refused (HTTP 413)
+    "logMB": 5,           // router.log is rotated to router.log.1 past this size
+    "statsDays": 90       // stats.jsonl keeps this many days; lifetime totals are kept separately
+  },
+
+  // ---- Models -----------------------------------------------------------------
+  // Canonical model per tier (what the Anthropic API calls them).
+  "models": {
+    "haiku": "claude-haiku-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5"
+  },
+
+  // USD per million tokens, used for cost decisions and savings reports.
+  // Cache writes are derived: 1.25x input (5-minute cache), 2x (1-hour cache).
+  // Haiku 5.5 charges more for prompts over 100k tokens ("long*" fields).
+  "prices": {
+    "claude-haiku-5-5": { "in": 0.10, "out": 0.50, "read": 0.01, "longAbove": 100000, "longIn": 0.50, "longOut": 2.50, "longRead": 0.05 },
+    "claude-sonnet-5-5": { "in": 2.00, "out": 10.00, "read": 0.10 },
+    "claude-opus-5-5": { "in": 4.00, "out": 20.00, "read": 0.20 }
+  },
+
+  // ---- Step 1: what does a message need? -------------------------------------
+  "classifier": {
+    // "heuristic": instant, free keyword/length rules.
+    // "llm": ask the haiku tier to classify each new message (~0.5 s, ~$0.0001).
+    "type": "heuristic",
+    "opusScore": 3,     // heuristic score at or above this wants opus
+    "haikuScore": -2    // at or below this wants haiku
+    // "opusKeywords": [...],   regexes; setting a list replaces the built-in one
+    // "haikuKeywords": [...],
+    // "followUpPattern": "..." replies like "yes"/"continue" keep the current model
+  },
+
+  // ---- Step 2: is switching worth it? -----------------------------------------
+  "switching": {
+    "mode": "cost-aware",          // "always" = follow step 1, ignore cache cost
+    "expectedOutputTokens": 1500,  // per turn
+    "expectedRequestsPerTurn": 4,  // your message + Claude's tool calls
+    "returnProbability": 0.5,      // higher = more reluctant to drop down in long chats
+    "maxUpgradeCacheCostUSD": 0.5, // most to spend on a cache rebuild to move UP a tier
+    "maxStreakTurns": 5,           // easy turns that can share one downgrade's cost
+    "bigContextTokens": 150000,    // above this many tokens...
+    "bigContextMinTier": "sonnet"  // ...never go below this tier
+  },
+
+  // ---- Free local model for easy tasks (optional) ---------------------------
+  // Easy tasks can run on a model on your own computer (Ollama, LM Studio,
+  // llama.cpp), which is free and keeps your code on your machine. It isn't
+  // Claude, so answers can differ. Setup guide: HELP.md, "Free local models".
+  // Also add a provider for it (see the "local" example under "providers").
+  "local": {
+    "enabled": false,
+    "provider": "local",
+    "model": "gpt-oss-32k",       // as listed by `ollama list`; give it a large context (see HELP.md)
+    "useFor": ["haiku"],          // "haiku" = easy tasks; add "sonnet" only with a strong model
+    "maxContextTokens": 32000,    // keep at or below the model's context length
+    "fallbackToClaude": true,
+    // Speed guard: keep easy tasks on Claude while the local model's measured
+    // response time is more than this many times Claude's. 0 = no limit.
+    "maxSlowdown": 2
+  },
+
+  // Requests whose model matches this regex are Claude Code's own background
+  // calls (titles, summaries). They're never re-routed, but they do fail over.
+  "backgroundModelPattern": "haiku",
+
+  // ---- Providers --------------------------------------------------------------
+  // Two types:
+  //   "anthropic": anything speaking the Anthropic Messages API: Anthropic itself,
+  //                Amazon Bedrock (Mantle endpoint), LiteLLM and similar gateways.
+  //   "vertex":    Claude on Google Cloud Vertex AI.
+  //
+  // auth.type:
+  //   "passthrough"  forward Claude Code's own credential (API key, gateway token,
+  //                  or an approved Team/Enterprise login; see subscriptionLogin).
+  //                  Only allowed on the primary (first in failover.order).
+  //   "bearer"       Authorization: Bearer <credential>
+  //   "x-api-key"    x-api-key: <credential>
+  //   "header"       <auth.name>: <credential>
+  //   "none"         no credential
+  // The credential comes from one of:
+  //   "keychain": name of a key saved with `autoroute ui` in your OS keychain
+  //               (macOS Keychain, or the Secret Service keyring on Linux)
+  //   "env":      an environment variable name
+  //   "command":  a command that prints the credential (cached for cacheSeconds)
+  //   "value":    a literal (avoid; only for local gateways with dummy keys)
+  //
+  // Your Anthropic credentials are removed from every request sent to a
+  // provider that doesn't use passthrough.
+  //
+  // "enabled": false switches a provider off without deleting it
+  // (`autoroute provider <name> off`, or the dashboard).
+  // "models" maps tiers to that provider's model IDs. A missing tier uses the
+  // nearest one the provider has (preferring the stronger model).
+  // "priceMultiplier" scales the prices above (e.g. 1.1 for +10% regional pricing);
+  // "prices": { "<tier>": {...} } replaces them for that provider entirely.
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "auth": { "type": "passthrough" }
+    }
+
+    // Amazon Bedrock via its Anthropic-compatible "Mantle" endpoint.
+    // Create a Bedrock API key in the AWS console and export it as AWS_BEARER_TOKEN_BEDROCK.
+    // Check the region offers Mantle and these model IDs in your account.
+    // ,"bedrock": {
+    //   "type": "anthropic",
+    //   "baseUrl": "https://bedrock-mantle.us-east-1.api.aws/anthropic",
+    //   "auth": { "type": "bearer", "env": "AWS_BEARER_TOKEN_BEDROCK" },
+    //   "forwardBetaHeaders": false,
+    //   "models": {
+    //     "haiku": "anthropic.claude-haiku-5-5",
+    //     "sonnet": "anthropic.claude-sonnet-5-5",
+    //     "opus": "anthropic.claude-opus-5-5"
+    //   }
+    // }
+
+    // Claude on Google Cloud Vertex AI. Needs `gcloud auth login` and Claude
+    // models enabled in your project's Model Garden.
+    // ,"vertex": {
+    //   "type": "vertex",
+    //   "projectId": "your-gcp-project-id",
+    //   "region": "global",
+    //   "auth": { "type": "bearer", "command": "gcloud auth print-access-token", "cacheSeconds": 3000 },
+    //   "models": {
+    //     "haiku": "claude-haiku-5-5",
+    //     "sonnet": "claude-sonnet-5-5",
+    //     "opus": "claude-opus-5-5"
+    //   }
+    // }
+
+    // A local model server for easy tasks (used by "local" above, not for failover).
+    // ,"local": {
+    //   "type": "anthropic",
+    //   "baseUrl": "http://127.0.0.1:11434",   // Ollama; LM Studio is usually :1234
+    //   "auth": { "type": "none" },
+    //   "forwardBetaHeaders": false,
+    //   "priceMultiplier": 0                   // free
+    // }
+
+    // Any other vendor through a gateway that speaks the Anthropic Messages API
+    // (e.g. LiteLLM in front of Gemini). Use PAID tiers for code: free tiers
+    // may use your prompts for training.
+    // ,"gateway": {
+    //   "type": "anthropic",
+    //   "baseUrl": "http://127.0.0.1:4000",
+    //   "auth": { "type": "x-api-key", "env": "LITELLM_API_KEY" },
+    //   "forwardBetaHeaders": false,
+    //   "models": { "sonnet": "gemini-pro" },
+    //   "prices": { "sonnet": { "in": 1.25, "out": 10.0, "read": 0.31 } }
+    // }
+  },
+
+  // ---- Failover ---------------------------------------------------------------
+  "failover": {
+    // Providers to try, in order. The first is the primary.
+    // Example: ["anthropic", "bedrock", "vertex"]
+    "order": ["anthropic"],
+    "onStatus": [500, 502, 503, 504, 529], // HTTP statuses that trigger failover
+    "onRateLimit": false,   // also fail over on 429 (e.g. you hit your plan's limits)
+    "onNetworkError": true, // connection refused, DNS failure, timeouts
+    // How long a failed provider is skipped. Long enough that a chat doesn't
+    // bounce back and forth (each switch costs a prompt-cache rebuild).
+    "cooldownSeconds": 300,
+    "connectTimeoutMs": 10000,
+    "responseTimeoutMs": 120000 // until response headers arrive
+  }
+}
+```
+
+===== Security (SECURITY.md) =====
+
+# Security
+
+claude-autoroute sits between Claude Code and your model providers, so it handles your credentials and your code. This page explains how it protects them and how to report a problem.
+
+## Reporting a vulnerability
+
+Please **don't open a public issue** for security problems. Use GitHub's private vulnerability reporting: the **Security** tab of this repository, then **Report a vulnerability**. Include steps to reproduce if you can. We aim to respond within a week.
+
+## What the router protects, and how
+
+| Risk | Protection |
+|---|---|
+| Your Anthropic API key or login reaching another company | Credential headers (`authorization`, `x-api-key`, and OAuth markers in `anthropic-beta`) are removed from every request to a provider that doesn't use `passthrough` auth. The config validator rejects `passthrough` on any provider except the primary. Covered by tests. |
+| Other local programs using the router to spend your backup credentials | Every request must carry a random secret header (`x-autoroute-key`), stored in `~/.claude-autoroute/local-key` with mode `0600`. `claude-auto` adds it through `ANTHROPIC_CUSTOM_HEADERS`. Requests without it get `401`. |
+| Using an account in a way its provider prohibits | Claude Free, Pro and Max subscription logins are detected and refused before anything is forwarded, because Anthropic doesn't allow third-party tools to route them. Team/Enterprise logins need an explicit opt-in. Your organization's `availableModels` restriction is always honored, with exact model matches only. Covered by tests. |
+| Other local programs reading your usage | The open `/__autoroute/health` check only says the router is running (version and process ID). Spending, provider health and decisions are at `/__autoroute/status`, which needs the local key. |
+| Remote access | The router binds to `127.0.0.1` by default. Changing `host` exposes it to your network, so don't. |
+| Your code or prompts persisting on disk | Prompt text is never written to disk, or shown in the dashboard. The log has the chosen tier and reason; stats have token counts, timings and a hash of the conversation's first message. `logPromptSnippets` (off by default) adds 60 characters of each prompt to the log. |
+| Other users on the machine reading runtime data | `~/.claude-autoroute` is created `0700` and its files `0600`. |
+| A malicious website in your browser talking to the dashboard | The dashboard opens only through a one-time, 2-minute link from `autoroute ui`. The session is an HttpOnly, SameSite=Strict cookie. The Host header must be this machine (blocks DNS rebinding). API calls need a custom header and, when they change anything, a matching Origin header (blocks CSRF). No CORS headers are sent. A strict Content-Security-Policy with no inline scripts, plus `frame-ancestors 'none'`, blocks injection and clickjacking. Covered by tests. |
+| API keys entered in the dashboard | Stored in the OS keychain: macOS Keychain, or the Secret Service on Linux. The key is passed to `security` / `secret-tool` on stdin, never as a command-line argument other users could see. The dashboard can't read a key back. There is no plaintext fallback. |
+| Secrets in config files | Credentials come from `env` (an environment variable) or `command` (e.g. `gcloud auth print-access-token`). A literal `value` is supported for local gateways, and `autoroute doctor` warns if it holds something that looks like a secret. |
+| Supply-chain attacks | Zero runtime dependencies. The npm package contains only the files listed in `package.json` `files`, which `npm run check:pack` verifies. |
+| Accidentally publishing secrets or personal data | `npm run check:secrets` scans everything git would commit for API keys, tokens, private keys, email addresses, home-directory paths and runtime files. It runs in CI, before `npm publish`, and as an optional pre-commit hook (`git config core.hooksPath .githooks`). |
+
+## What the router can't protect against
+
+- **Anything running as your user** can read `~/.claude-autoroute/local-key`, your environment variables and your shell history. It has the same access you do.
+- **Your providers' own data handling.** Read each provider's data-use terms. Some free tiers use your prompts for training.
+- **Commands in `auth.command`** run with your permissions. Only put commands you trust in your config.
+
+## Supported versions
+
+Security fixes go into the latest release.

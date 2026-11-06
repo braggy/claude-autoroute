@@ -1,0 +1,35 @@
+// Last-resort failover to another vendor through a translation gateway such as
+// LiteLLM, which accepts Anthropic Messages requests and forwards them elsewhere.
+//
+// Things to know before using a non-Claude model in Claude Code:
+//   - Use a PAID tier. Free tiers of some vendors may use your prompts (your code)
+//     to train their models.
+//   - Tool use and output quality differ from Claude; keep it as a last resort.
+//   - Claude-specific features (server-side tools, thinking) may not carry over.
+//
+// Setup: run the gateway on this machine and export LITELLM_API_KEY.
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "auth": { "type": "passthrough" }
+    },
+    "gateway": {
+      "type": "anthropic",
+      "baseUrl": "http://127.0.0.1:4000",
+      "auth": { "type": "x-api-key", "env": "LITELLM_API_KEY" },
+      "forwardBetaHeaders": false,
+      // Model names as the gateway knows them. Tiers you leave out use the nearest one.
+      "models": { "haiku": "your-fast-model", "sonnet": "your-strong-model" },
+      // Prices for savings reports (USD per million tokens). Omit if unknown.
+      "prices": {
+        "haiku": { "in": 0.10, "out": 0.40, "read": 0.025 },
+        "sonnet": { "in": 1.25, "out": 10.0, "read": 0.31 }
+      }
+    }
+  },
+  "failover": {
+    "order": ["anthropic", "gateway"]
+  }
+}

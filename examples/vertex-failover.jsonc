@@ -1,0 +1,29 @@
+// Anthropic first; Claude on Google Cloud Vertex AI if it fails.
+//
+// Setup:
+//   1. Enable the Claude models in your project's Vertex AI Model Garden.
+//   2. Install the gcloud CLI and run `gcloud auth login`.
+//   3. Set projectId below to your project ID.
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "auth": { "type": "passthrough" }
+    },
+    "vertex": {
+      "type": "vertex",
+      "projectId": "your-gcp-project-id",
+      "region": "global",
+      "auth": { "type": "bearer", "command": "gcloud auth print-access-token", "cacheSeconds": 3000 },
+      "models": {
+        "haiku": "claude-haiku-5-5",
+        "sonnet": "claude-sonnet-5-5",
+        "opus": "claude-opus-5-5"
+      }
+    }
+  },
+  "failover": {
+    "order": ["anthropic", "vertex"]
+  }
+}

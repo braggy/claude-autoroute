@@ -1,0 +1,33 @@
+# Runtime data never belongs in the repo (it lives in ~/.claude-autoroute anyway)
+config.json
+config.jsonc
+!config.example.jsonc
+local-key
+state.json
+stats.jsonl
+router.log
+router.out
+router.pid
+*.log
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+/credentials*
+/secrets*
+
+# Tooling
+node_modules/
+*.tgz
+.DS_Store
+coverage/
+.vscode/
+.idea/
+
+# Dashboard runtime files
+ui-token
+totals.json
+config.jsonc.bak
+config.jsonc.tmp

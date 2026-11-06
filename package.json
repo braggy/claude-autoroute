@@ -1,0 +1,50 @@
+{
+  "name": "claude-autoroute",
+  "version": "0.1.0",
+  "description": "Per-message model routing (Haiku/Sonnet/Opus) and multi-provider failover for Claude Code, with prompt-cache-aware cost decisions.",
+  "type": "module",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "bin": {
+    "claude-auto": "bin/claude-auto.mjs",
+    "autoroute": "bin/autoroute.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "assets/",
+    "config.example.jsonc",
+    "README.md",
+    "HELP.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "llms.txt",
+    "llms-full.txt"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "prepublishOnly": "npm test && npm run check:secrets && npm run check:pack && node scripts/build-llms.mjs --check",
+    "build:llms": "node scripts/build-llms.mjs",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85 --test-coverage-exclude=test/** test/*.test.mjs",
+    "test:mutation": "node scripts/mutation.mjs"
+  },
+  "keywords": [
+    "claude-code",
+    "anthropic",
+    "llm-router",
+    "model-routing",
+    "prompt-caching",
+    "failover",
+    "bedrock",
+    "vertex-ai"
+  ]
+}

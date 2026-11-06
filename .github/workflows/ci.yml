@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Read-only by default. No job here can push, publish or read secrets.
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Third-party actions are pinned to full commit SHAs (tags can be moved).
+# Dependabot (.github/dependabot.yml) proposes updates; the comment shows the version.
+jobs:
+  test:
+    name: test / ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      # Every supported Node version on Linux, plus macOS on the main version.
+      # (In a private repository on the free plan, macOS minutes count 10x against the
+      # 2,000 monthly minutes; in a public repository standard runners are free.)
+      matrix:
+        os: [ubuntu-latest]
+        node: [20, 22, 24]
+        include:
+          - os: macos-latest
+            node: 22
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Regenerate docs for AI assistants (main only; the llms workflow commits them)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node scripts/build-llms.mjs
+      - name: Unit, integration and CLI tests
+        run: npm test
+      - name: No secrets or personal data in the repo
+        run: npm run check:secrets
+      - name: npm package contains only allowlisted, clean files
+        run: npm run check:pack
+      - name: Docs for AI assistants are up to date (pull requests and other branches)
+        if: "!(github.event_name == 'push' && github.ref == 'refs/heads/main')"
+        run: node scripts/build-llms.mjs --check
+      - name: Smoke test the installer and the installed commands
+        shell: bash
+        env:
+          AUTOROUTE_HOME: ${{ runner.temp }}/autoroute-home
+          AUTOROUTE_PORT: "8799"
+        run: |
+          set -euo pipefail
+          ./install.sh --no-setup
+          autoroute version
+          autoroute setup --login api-key --yes --no-selftest
+          autoroute init
+          autoroute explain "refactor the auth module across the codebase"
+          autoroute start
+          autoroute status
+          autoroute stop
+          command -v claude-auto
+
+  quality:
+    name: coverage, mutation, shell and workflow checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Syntax check every JavaScript file
+        run: for f in bin/*.mjs src/*.mjs src/ui/*.js scripts/*.mjs test/*.mjs; do node --check "$f"; done
+      - name: Coverage floor (lines 90%, branches 75%, functions 85%)
+        run: npm run test:coverage
+      - name: Mutation check (security, policy and money code must be guarded by tests)
+        run: npm run test:mutation
+      - name: Shell scripts (installer, pre-commit hook and the generated app launcher)
+        run: |
+          shellcheck .githooks/pre-commit install.sh
+          node -e 'import("./src/launcher.mjs").then(m => process.stdout.write(m.launchScript({})))' > "$RUNNER_TEMP/launch.sh"
+          shellcheck "$RUNNER_TEMP/launch.sh"
+      - name: Workflow files (actionlint, pinned version)
+        run: |
+          pip install --quiet --user actionlint-py==1.7.12
+          actionlint .github/workflows/*.yml

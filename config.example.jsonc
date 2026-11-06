@@ -1,0 +1,225 @@
+// claude-autoroute configuration
+// ------------------------------------------------------------------------------
+// Copy to ~/.claude-autoroute/config.jsonc (`autoroute init` does this), then run
+// `autoroute doctor`. Comments and trailing commas are allowed.
+//
+// Every key is optional: anything you leave out uses the built-in default shown
+// here. Changes are picked up within ~2 seconds; no restart needed (except
+// `host`/`port`).
+//
+// SECRETS: never paste API keys into this file. Use "env" (read an environment
+// variable) or "command" (run a command that prints a token) instead.
+// ------------------------------------------------------------------------------
+{
+  // Where the router listens. Keep it on 127.0.0.1 (this machine only).
+  "host": "127.0.0.1",
+  "port": 8787,
+  // Must stay on this machine unless you set "allowNonLocalHost": true (not recommended).
+
+  // claude-auto sends a random secret header (stored in ~/.claude-autoroute/local-key);
+  // requests without it are rejected, so other programs on this machine can't use
+  // the router to spend your backup-provider credentials.
+  "requireLocalKey": true,
+
+  // ---- Accounts ----------------------------------------------------------------
+  // Claude subscription logins. Anthropic does not allow third-party tools to route
+  // requests through Claude Free, Pro or Max plan credentials, so they're refused.
+  // Set "allow-team-enterprise" ONLY if you're on a Team or Enterprise plan and your
+  // admin has approved routing tools. Subscription logins look the same for every
+  // plan, so this setting is your confirmation.
+  "subscriptionLogin": "refuse",
+
+  // Pause routing: Claude Code's requests go through unchanged (failover still works).
+  // Quick switch: `autoroute pause` / `autoroute resume`, or the dashboard.
+  "paused": false,
+
+  // Shadow mode: the router decides as usual but keeps the model Claude Code asked for, and
+  // records what routing WOULD have cost (cache rebuilds included). A no-risk way to see the
+  // likely savings before letting it change anything. Your !opus / !sonnet / !haiku still work.
+  // Quick switch: `autoroute shadow on|off`, or the dashboard.
+  "shadow": false,
+
+  // The last priority preset chosen in the dashboard or with `autoroute priority`:
+  // lowest-cost, balanced, fastest or best-quality. A preset sets the switching,
+  // allowedTiers and local settings below; this field is just a label.
+  "priority": "balanced",
+
+  // Tiers the router may use. Your organization's availableModels (Claude Code
+  // managed settings) are always honored on top of this.
+  "allowedTiers": ["haiku", "sonnet", "opus"],
+
+  // Include the first 60 characters of each prompt in router.log. Off by default.
+  "logPromptSnippets": false,
+
+  // Safety and housekeeping limits.
+  "limits": {
+    "maxRequestMB": 50,   // larger requests from Claude Code are refused (HTTP 413)
+    "logMB": 5,           // router.log is rotated to router.log.1 past this size
+    "statsDays": 90       // stats.jsonl keeps this many days; lifetime totals are kept separately
+  },
+
+  // ---- Models -----------------------------------------------------------------
+  // Canonical model per tier (what the Anthropic API calls them).
+  "models": {
+    "haiku": "claude-haiku-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5"
+  },
+
+  // USD per million tokens, used for cost decisions and savings reports.
+  // Cache writes are derived: 1.25x input (5-minute cache), 2x (1-hour cache).
+  // Haiku 5.5 charges more for prompts over 100k tokens ("long*" fields).
+  "prices": {
+    "claude-haiku-5-5": { "in": 0.10, "out": 0.50, "read": 0.01, "longAbove": 100000, "longIn": 0.50, "longOut": 2.50, "longRead": 0.05 },
+    "claude-sonnet-5-5": { "in": 2.00, "out": 10.00, "read": 0.10 },
+    "claude-opus-5-5": { "in": 4.00, "out": 20.00, "read": 0.20 }
+  },
+
+  // ---- Step 1: what does a message need? -------------------------------------
+  "classifier": {
+    // "heuristic": instant, free keyword/length rules.
+    // "llm": ask the haiku tier to classify each new message (~0.5 s, ~$0.0001).
+    "type": "heuristic",
+    "opusScore": 3,     // heuristic score at or above this wants opus
+    "haikuScore": -2    // at or below this wants haiku
+    // "opusKeywords": [...],   regexes; setting a list replaces the built-in one
+    // "haikuKeywords": [...],
+    // "followUpPattern": "..." replies like "yes"/"continue" keep the current model
+  },
+
+  // ---- Step 2: is switching worth it? -----------------------------------------
+  "switching": {
+    "mode": "cost-aware",          // "always" = follow step 1, ignore cache cost
+    "expectedOutputTokens": 1500,  // per turn
+    "expectedRequestsPerTurn": 4,  // your message + Claude's tool calls
+    "returnProbability": 0.5,      // higher = more reluctant to drop down in long chats
+    "maxUpgradeCacheCostUSD": 0.5, // most to spend on a cache rebuild to move UP a tier
+    "maxStreakTurns": 5,           // easy turns that can share one downgrade's cost
+    "bigContextTokens": 150000,    // above this many tokens...
+    "bigContextMinTier": "sonnet"  // ...never go below this tier
+  },
+
+  // ---- Free local model for easy tasks (optional) ---------------------------
+  // Easy tasks can run on a model on your own computer (Ollama, LM Studio,
+  // llama.cpp), which is free and keeps your code on your machine. It isn't
+  // Claude, so answers can differ. Setup guide: HELP.md, "Free local models".
+  // Also add a provider for it (see the "local" example under "providers").
+  "local": {
+    "enabled": false,
+    "provider": "local",
+    "model": "gpt-oss-32k",       // as listed by `ollama list`; give it a large context (see HELP.md)
+    "useFor": ["haiku"],          // "haiku" = easy tasks; add "sonnet" only with a strong model
+    "maxContextTokens": 32000,    // keep at or below the model's context length
+    "fallbackToClaude": true,
+    // Speed guard: keep easy tasks on Claude while the local model's measured
+    // response time is more than this many times Claude's. 0 = no limit.
+    "maxSlowdown": 2
+  },
+
+  // Requests whose model matches this regex are Claude Code's own background
+  // calls (titles, summaries). They're never re-routed, but they do fail over.
+  "backgroundModelPattern": "haiku",
+
+  // ---- Providers --------------------------------------------------------------
+  // Two types:
+  //   "anthropic": anything speaking the Anthropic Messages API: Anthropic itself,
+  //                Amazon Bedrock (Mantle endpoint), LiteLLM and similar gateways.
+  //   "vertex":    Claude on Google Cloud Vertex AI.
+  //
+  // auth.type:
+  //   "passthrough"  forward Claude Code's own credential (API key, gateway token,
+  //                  or an approved Team/Enterprise login; see subscriptionLogin).
+  //                  Only allowed on the primary (first in failover.order).
+  //   "bearer"       Authorization: Bearer <credential>
+  //   "x-api-key"    x-api-key: <credential>
+  //   "header"       <auth.name>: <credential>
+  //   "none"         no credential
+  // The credential comes from one of:
+  //   "keychain": name of a key saved with `autoroute ui` in your OS keychain
+  //               (macOS Keychain, or the Secret Service keyring on Linux)
+  //   "env":      an environment variable name
+  //   "command":  a command that prints the credential (cached for cacheSeconds)
+  //   "value":    a literal (avoid; only for local gateways with dummy keys)
+  //
+  // Your Anthropic credentials are removed from every request sent to a
+  // provider that doesn't use passthrough.
+  //
+  // "enabled": false switches a provider off without deleting it
+  // (`autoroute provider <name> off`, or the dashboard).
+  // "models" maps tiers to that provider's model IDs. A missing tier uses the
+  // nearest one the provider has (preferring the stronger model).
+  // "priceMultiplier" scales the prices above (e.g. 1.1 for +10% regional pricing);
+  // "prices": { "<tier>": {...} } replaces them for that provider entirely.
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "auth": { "type": "passthrough" }
+    }
+
+    // Amazon Bedrock via its Anthropic-compatible "Mantle" endpoint.
+    // Create a Bedrock API key in the AWS console and export it as AWS_BEARER_TOKEN_BEDROCK.
+    // Check the region offers Mantle and these model IDs in your account.
+    // ,"bedrock": {
+    //   "type": "anthropic",
+    //   "baseUrl": "https://bedrock-mantle.us-east-1.api.aws/anthropic",
+    //   "auth": { "type": "bearer", "env": "AWS_BEARER_TOKEN_BEDROCK" },
+    //   "forwardBetaHeaders": false,
+    //   "models": {
+    //     "haiku": "anthropic.claude-haiku-5-5",
+    //     "sonnet": "anthropic.claude-sonnet-5-5",
+    //     "opus": "anthropic.claude-opus-5-5"
+    //   }
+    // }
+
+    // Claude on Google Cloud Vertex AI. Needs `gcloud auth login` and Claude
+    // models enabled in your project's Model Garden.
+    // ,"vertex": {
+    //   "type": "vertex",
+    //   "projectId": "your-gcp-project-id",
+    //   "region": "global",
+    //   "auth": { "type": "bearer", "command": "gcloud auth print-access-token", "cacheSeconds": 3000 },
+    //   "models": {
+    //     "haiku": "claude-haiku-5-5",
+    //     "sonnet": "claude-sonnet-5-5",
+    //     "opus": "claude-opus-5-5"
+    //   }
+    // }
+
+    // A local model server for easy tasks (used by "local" above, not for failover).
+    // ,"local": {
+    //   "type": "anthropic",
+    //   "baseUrl": "http://127.0.0.1:11434",   // Ollama; LM Studio is usually :1234
+    //   "auth": { "type": "none" },
+    //   "forwardBetaHeaders": false,
+    //   "priceMultiplier": 0                   // free
+    // }
+
+    // Any other vendor through a gateway that speaks the Anthropic Messages API
+    // (e.g. LiteLLM in front of Gemini). Use PAID tiers for code: free tiers
+    // may use your prompts for training.
+    // ,"gateway": {
+    //   "type": "anthropic",
+    //   "baseUrl": "http://127.0.0.1:4000",
+    //   "auth": { "type": "x-api-key", "env": "LITELLM_API_KEY" },
+    //   "forwardBetaHeaders": false,
+    //   "models": { "sonnet": "gemini-pro" },
+    //   "prices": { "sonnet": { "in": 1.25, "out": 10.0, "read": 0.31 } }
+    // }
+  },
+
+  // ---- Failover ---------------------------------------------------------------
+  "failover": {
+    // Providers to try, in order. The first is the primary.
+    // Example: ["anthropic", "bedrock", "vertex"]
+    "order": ["anthropic"],
+    "onStatus": [500, 502, 503, 504, 529], // HTTP statuses that trigger failover
+    "onRateLimit": false,   // also fail over on 429 (e.g. you hit your plan's limits)
+    "onNetworkError": true, // connection refused, DNS failure, timeouts
+    // How long a failed provider is skipped. Long enough that a chat doesn't
+    // bounce back and forth (each switch costs a prompt-cache rebuild).
+    "cooldownSeconds": 300,
+    "connectTimeoutMs": 10000,
+    "responseTimeoutMs": 120000 // until response headers arrive
+  }
+}

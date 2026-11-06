@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs before every commit. Enable once per clone with:  git config core.hooksPath .githooks
+set -e
+
+# 1. Block anything secret or personal.
+node scripts/check-secrets.mjs
+
+# 2. Keep the files for AI assistants in step with the docs: regenerate and stage them.
+node scripts/build-llms.mjs >/dev/null
+git add llms.txt llms-full.txt

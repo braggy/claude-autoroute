@@ -91,5 +91,5 @@ jobs:
           shellcheck "$RUNNER_TEMP/launch.sh"
       - name: Workflow files (actionlint, pinned version)
         run: |
-          pip install --quiet --user actionlint-py==1.7.12
+          pip install --quiet --user actionlint-py==1.7.12.25
           actionlint .github/workflows/*.yml

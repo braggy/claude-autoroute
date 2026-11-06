@@ -137,3 +137,27 @@ test("dashboard: overview includes lifetime value and no prompt text", async () 
   assert.ok(o.json.lifetime.saved > 0);
   assert.ok(!JSON.stringify(o.json).includes("zebra"));
 });
+
+test("dashboard: can't add or change a credential command, only keep or remove one", async () => {
+  const r = await startRouter({}); cleanup.push(r.close);
+  const onDisk = {
+    providers: { anthropic: { baseUrl: "https://api.anthropic.com" }, gw: { baseUrl: "http://127.0.0.1:4000", auth: { type: "bearer", command: "echo ok" } } },
+    failover: { order: ["anthropic", "gw"] },
+  };
+  fs.writeFileSync(path.join(r.home, "config.jsonc"), JSON.stringify(onDisk));
+  const api = apiFor(r, await session(r));
+  const user = (await api("config")).json.user;
+
+  const changed = structuredClone(user); changed.providers.gw.auth.command = "touch /tmp/pwned";
+  const res = await api("config", { method: "PUT", body: { config: changed } });
+  assert.equal(res.status, 403);
+  assert.match(res.json.errors.join(" "), /can't set a credential command/);
+  const added = structuredClone(user); added.providers.anthropic.auth = { type: "bearer", command: "id" };
+  assert.equal((await api("config", { method: "PUT", body: { config: added } })).status, 403);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(r.home, "config.jsonc"), "utf8")).providers.gw.auth.command, "echo ok", "file untouched");
+
+  const kept = structuredClone(user); kept.switching = { returnProbability: 0.7 };
+  assert.equal((await api("config", { method: "PUT", body: { config: kept } })).status, 200, "an unchanged command saves fine");
+  const removed = structuredClone(kept); removed.providers.gw.auth = { type: "bearer", env: "GW_TOKEN" };
+  assert.equal((await api("config", { method: "PUT", body: { config: removed } })).status, 200, "removing a command is allowed");
+});

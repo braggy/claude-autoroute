@@ -9,6 +9,8 @@
 //    change anything, a matching Origin header. No CORS headers are ever sent.
 //  - Strict Content-Security-Policy; no inline scripts.
 //  - API keys go into the OS keychain and are never sent back to the browser.
+//  - auth.command runs a shell command, so the dashboard can't add or change one.
+//    It can only be set by editing the config file.
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -107,6 +109,17 @@ function unredact(incoming, onDisk) {
   }
   return incoming;
 }
+// Names of providers whose auth.command the incoming config adds or changes.
+// Removing a command is allowed; it only takes power away.
+function changedAuthCommands(incoming, onDisk) {
+  const out = [];
+  for (const [name, p] of Object.entries(incoming.providers || {})) {
+    const cmd = p?.auth?.command;
+    if (cmd === undefined) continue;
+    if (cmd !== onDisk.providers?.[name]?.auth?.command) out.push(name);
+  }
+  return out;
+}
 const readUserConfig = readUserCfg;
 const writeUserConfig = saveUserConfig;
 function keychainNames(cfg) {
@@ -186,6 +199,8 @@ async function api(ctx, req, res, route) {
     if (!config || typeof config !== "object" || Array.isArray(config)) return json(res, 400, { error: "expected { config: {...} }" });
     const onDisk = readUserConfig(home).user;
     const user = unredact(config, onDisk);
+    const cmds = changedAuthCommands(user, onDisk);
+    if (cmds.length) return json(res, 403, { errors: [`The dashboard can't set a credential command (providers: ${cmds.join(", ")}). It runs a shell command, so add it by editing ${configPath(home)} instead.`] });
     let next;
     try { next = buildConfig(user, ctx.env); } catch (e) { return json(res, 422, { errors: [e.message] }); }
     const errors = validateConfig(next);

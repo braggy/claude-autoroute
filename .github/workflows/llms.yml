@@ -19,6 +19,8 @@ on:
       - README.md
       - HELP.md
       - SECURITY.md
+      - ADMIN.md
+      - ADDITIONAL-PERMISSION.md
       - CHANGELOG.md
       - CONTRIBUTING.md
       - config.example.jsonc

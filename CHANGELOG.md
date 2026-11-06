@@ -14,6 +14,7 @@ First release.
 - SECURITY.md lists the risks that remain, and says plainly that the Team/Enterprise opt-in can't be checked.
 - README says plainly that it isn't a multi-vendor router, and links the LiteLLM gateway example.
 - Release tags are signed.
+- The dashboard app's "couldn't start" alert on macOS no longer keeps the launch script running until it's dismissed. This also fixes the macOS CI job, which hung on it until timeout.
 
 **First-run experience (2026-11-06)**
 

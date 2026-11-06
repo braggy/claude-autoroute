@@ -36,6 +36,19 @@ test("the launch script fails cleanly if Node.js moved", { skip: process.platfor
   assert.equal(r.status, 1);
 });
 
+test("the launch script doesn't wait for its error alert to be dismissed", { skip: process.platform === "win32" }, () => {
+  const { root } = sandbox();
+  const bin = path.join(root, "bin"); fs.mkdirSync(bin);
+  // Stands in for a macOS alert nobody clicks (e.g. on a headless CI runner).
+  fs.writeFileSync(path.join(bin, "osascript"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+  const script = path.join(root, "open-dashboard");
+  fs.writeFileSync(script, launchScript({ node: "/nonexistent/node", cli: "/nonexistent/cli" }), { mode: 0o700 });
+  const started = Date.now();
+  const r = spawnSync(script, { env: { HOME: root, PATH: `${bin}:/usr/bin:/bin` }, timeout: 10000 });
+  assert.equal(r.status, 1);
+  assert.ok(Date.now() - started < 5000, "exited without waiting for the alert");
+});
+
 test("Linux: desktop entry and icons in the standard places", () => {
   const { env, home } = sandbox();
   const r = installApp({ home, env, platform: "linux", reveal: false });

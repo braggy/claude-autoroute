@@ -12,7 +12,7 @@ Please **don't open a public issue** for security problems. Use GitHub's private
 |---|---|
 | Your Anthropic API key or login reaching another company | Credential headers (`authorization`, `x-api-key`, and OAuth markers in `anthropic-beta`) are removed from every request to a provider that doesn't use `passthrough` auth. The config validator rejects `passthrough` on any provider except the primary. Covered by tests. |
 | Other local programs using the router to spend your backup credentials | Every request must carry a random secret header (`x-autoroute-key`), stored in `~/.claude-autoroute/local-key` with mode `0600`. `claude-auto` adds it through `ANTHROPIC_CUSTOM_HEADERS`. Requests without it get `401`. |
-| Using an account in a way its provider prohibits | Claude Free, Pro and Max subscription logins are detected and refused before anything is forwarded, because Anthropic doesn't allow third-party tools to route them. Team/Enterprise logins need an explicit opt-in. Your organization's `availableModels` restriction is always honored, with exact model matches only. Covered by tests. |
+| Using an account in a way its provider prohibits | Claude Free, Pro and Max subscription logins are detected and refused before anything is forwarded, because Anthropic doesn't allow third-party tools to route them. Team/Enterprise logins need an explicit opt-in. That opt-in is the user's own statement that their admin approved it: subscription logins look the same for every plan, so the router can't check it. Your organization's `availableModels` restriction is always honored, with exact model matches only. Covered by tests. |
 | Other local programs reading your usage | The open `/__autoroute/health` check only says the router is running (version and process ID). Spending, provider health and decisions are at `/__autoroute/status`, which needs the local key. |
 | Remote access | The router binds to `127.0.0.1` by default. Changing `host` exposes it to your network, so don't. |
 | Your code or prompts persisting on disk | Prompt text is never written to disk, or shown in the dashboard. The log has the chosen tier and reason; stats have token counts, timings and a hash of the conversation's first message. `logPromptSnippets` (off by default) adds 60 characters of each prompt to the log. |
@@ -27,7 +27,12 @@ Please **don't open a public issue** for security problems. Use GitHub's private
 
 - **Anything running as your user** can read `~/.claude-autoroute/local-key`, your environment variables and your shell history. It has the same access you do.
 - **Your providers' own data handling.** Read each provider's data-use terms. Some free tiers use your prompts for training.
-- **Commands in `auth.command`** run with your permissions. Only put commands you trust in your config.
+- **Commands in `auth.command`** run with your permissions. Only put commands you trust in your config. The dashboard can't add or change one; only the config file can.
+- **Plain HTTP on loopback.** Claude Code talks to the router over `http://127.0.0.1`, so the router sees prompts, code and Claude Code's credential, including an OAuth token on Team and Enterprise.
+- **The background router outlives the session.** It keeps running until `autoroute stop` or a reboot, answering only requests that carry the local key.
+- **Where credentials go.** The primary provider gets Claude Code's credential at whatever address `ANTHROPIC_BASE_URL`, `AUTOROUTE_UPSTREAM` or its `baseUrl` names. There is no allow-list, so anyone who can change your environment or config can redirect it.
+
+For a one-page data-flow summary and an approval checklist, see [ADMIN.md](ADMIN.md).
 
 ## Supported versions
 

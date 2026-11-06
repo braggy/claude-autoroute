@@ -388,7 +388,7 @@ async function viewProviders() {
       ensureProviders();
       const a = state.user.providers[name].auth;
       delete a.keychain; delete a.env; delete a.command; delete a.value;
-      if (s === "keychain") a.keychain = name; if (s === "env") a.env = ""; if (s === "command") a.command = "";
+      if (s === "keychain") a.keychain = name; if (s === "env") a.env = "";
       markDirty(); render();
     };
     const edit = (p, v) => { ensureProviders(); set(p, v); };
@@ -406,7 +406,7 @@ async function viewProviders() {
         field("Credential", h("select", { onchange: (e) => setSource(e.target.value) },
           h("option", { value: "keychain", selected: source === "keychain" }, kc ? `Stored in ${keys.backend.name}` : "Stored in OS keychain (unavailable)"),
           h("option", { value: "env", selected: source === "env" }, "Environment variable"),
-          h("option", { value: "command", selected: source === "command" }, "Command that prints a token"))),
+          source === "command" && h("option", { value: "command", selected: true }, "Command that prints a token"))),
         source === "keychain" && (kc
           ? h("div", { class: "field" },
               h("div", { class: "row" }, saved ? h("span", { class: "pill ok" }, "Key saved") : h("span", { class: "pill warn" }, "No key saved yet")),
@@ -422,8 +422,8 @@ async function viewProviders() {
           : h("div", { class: "result fail" }, keys.backend.help)),
         source === "env" && field("Variable name", h("input", { type: "text", value: auth.env || "", placeholder: "e.g. AWS_BEARER_TOKEN_BEDROCK", oninput: (e) => edit(P(["auth", "env"]), e.target.value) }),
           "Export it in your shell profile (~/.zshrc or ~/.bashrc), then restart the router: autoroute restart"),
-        source === "command" && field("Command", h("input", { type: "text", value: auth.command || "", oninput: (e) => edit(P(["auth", "command"]), e.target.value) }),
-          "Runs on your machine; its output is used as the token and cached for a while."),
+        source === "command" && field("Command", h("input", { type: "text", value: auth.command || "", readonly: true }),
+          "Runs on your machine; its output is used as the token and cached for a while. For safety the dashboard can't change it: edit the config file instead."),
       );
     }
 

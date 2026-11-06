@@ -69,7 +69,9 @@ Check this first. It decides whether claude-autoroute is for you.
 | **Claude Free, Pro or Max** subscription login | ❌ **No.** Anthropic does not allow third-party tools to route requests through Free, Pro or Max plan credentials ([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)). claude-autoroute detects these logins and refuses them with an explanation, and nothing is forwarded. |
 | **Claude Team or Enterprise** subscription login | ⚠️ **Only with your admin's approval.** Your organization's agreement with Anthropic governs this. Off by default; turn it on with `"subscriptionLogin": "allow-team-enterprise"`. Subscription logins look the same for every plan, so this setting is your confirmation, not something the router can check. |
 | **A free local model** (Ollama, LM Studio, llama.cpp) for easy tasks | ✅ **Optional**, off by default. Easy messages run free on your own computer, and Claude does the rest. It isn't Claude, so answers can differ. See [Free local model](#free-local-model-for-easy-tasks). |
-| Other vendors (e.g. Gemini via LiteLLM) | ⚠️ As a last-resort **backup** only, through a paid gateway. Anthropic doesn't support Claude Code on non-Claude models. |
+| Other vendors (e.g. Gemini via LiteLLM) | ⚠️ As a last-resort **backup** only, through a paid gateway: see [`examples/gateway-other-vendor.jsonc`](examples/gateway-other-vendor.jsonc). Anthropic doesn't support Claude Code on non-Claude models. |
+
+**It isn't a multi-vendor router.** It routes between Claude models. Non-Claude models are only an optional backup or an optional local model for easy tasks, and both are off by default.
 
 To see how you're signed in, run `/status` in Claude Code. The dashboard's setup checklist also shows the login type once Claude Code connects.
 
@@ -104,7 +106,7 @@ claude-auto                    # use exactly like `claude`; all arguments pass t
 autoroute stats                # what it saved (or, in shadow mode, would have saved), plus a trial check
 ```
 
-**Start risk-free with shadow mode.** autoroute decides as usual but changes nothing, and records what routing would have saved. That includes cache rebuild costs, so the estimate isn't flattering. Turn routing on with `autoroute shadow off` once you're happy. **On a work laptop with Claude Team or Enterprise,** follow HELP.md: "Set up on a work laptop".
+**Start risk-free with shadow mode.** autoroute decides as usual but changes nothing, and records what routing would have saved. That includes cache rebuild costs, so the estimate isn't flattering. Turn routing on with `autoroute shadow off` once you're happy. **On a work laptop with Claude Team or Enterprise,** follow HELP.md: "Set up on a work laptop". Admins deciding whether to approve it: read [ADMIN.md](ADMIN.md).
 
 Prefer to configure by hand? `autoroute init` writes a fully commented config file, and `autoroute doctor` checks your setup. `autoroute ui` opens the dashboard.
 
@@ -337,7 +339,7 @@ If `ANTHROPIC_BASE_URL` is already set (you use a gateway), `claude-auto` forwar
 - **The dashboard is locked down.** It opens only through a one-time link from `autoroute ui`, accepts requests only from this machine, and has CSRF and DNS-rebinding protection and a strict Content Security Policy. See [SECURITY.md](SECURITY.md).
 - **Credentials only go to their own provider.** See [Failover](#failover-to-other-providers).
 
-See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
+See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability, and [ADMIN.md](ADMIN.md) for a data-flow summary and an approval checklist.
 
 ## Limitations
 
@@ -357,6 +359,12 @@ The most common questions are below. [HELP.md](HELP.md) has the full set, plus t
 
 **Does switching models waste tokens?**
 It can, which is why the router counts the cost first. See [How it decides](#how-it-decides). `autoroute savings` reports the cache-rebuild cost of every switch, already subtracted from your savings.
+
+**Is it a multi-vendor router?**
+No. It picks between Claude models. You can add another vendor as a last-resort backup through a gateway such as LiteLLM ([example](examples/gateway-other-vendor.jsonc)). Use a paid tier: free tiers, including Gemini's, may use your prompts for training.
+
+**Can I use it at work?**
+Yes. On top of the noncommercial licence, an [additional permission](ADDITIONAL-PERMISSION.md) allows internal use at any organisation, including a company. Team and Enterprise logins also need your admin's approval: point them to [ADMIN.md](ADMIN.md).
 
 **Can I use a free tier of another vendor for simple tasks?**
 You can configure it, but it's rarely worth it. Haiku 5.5 already costs a fraction of a cent per simple turn, switching vendors throws away the prompt cache, and free tiers may use your prompts, which here means your code, for training.
@@ -378,4 +386,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). In short: no runtime dependencies, tests
 
 [PolyForm Noncommercial 1.0.0](LICENSE). Copyright (c) 2026 Steve Bragg.
 
-Free for personal use, study, testing and other noncommercial purposes. Any commercial use, including selling it, bundling it in a product or offering it as a service, needs a separate licence: open an issue to ask.
+Free for personal use, study, testing and other noncommercial purposes. An [additional permission](ADDITIONAL-PERMISSION.md) also allows internal use at any organisation, including a company. Selling it, bundling it in a product or offering it as a service needs a separate licence: open an issue to ask.

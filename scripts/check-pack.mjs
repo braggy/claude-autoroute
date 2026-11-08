@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { scan } from "./check-secrets.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ALLOWED = [/^bin\/[\w-]+\.mjs$/, /^src\/[\w-]+\.mjs$/, /^src\/ui\/(index\.html|app\.js|help\.js|app\.css|favicon\.svg)$/, /^assets\/icon(-\d+\.png|\.svg)$/, /^config\.example\.jsonc$/, /^(README|SECURITY|CHANGELOG|HELP)\.md$/, /^LICENSE$/, /^llms(-full)?\.txt$/, /^package\.json$/];
+const ALLOWED = [/^bin\/[\w-]+\.mjs$/, /^src\/[\w-]+\.mjs$/, /^src\/ui\/(index\.html|app\.js|help\.js|app\.css|favicon\.svg)$/, /^assets\/icon(-\d+\.png|\.svg)$/, /^config\.example\.jsonc$/, /^(README|SECURITY|CHANGELOG|HELP|ADMIN|ADDITIONAL-PERMISSION)\.md$/, /^LICENSE$/, /^llms(-full)?\.txt$/, /^package\.json$/];
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const out = JSON.parse(execFileSync(npm, ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] }).toString());

@@ -17,6 +17,16 @@ Pro and Max logins can't be routed, so `claude-auto` used to start Claude Code a
 
 **Licence (2026-11-06):** PolyForm Noncommercial 1.0.0, copyright Steve Bragg, replacing MIT. Contributions are licensed to the maintainer under MIT (see `CONTRIBUTING.md`).
 
+**Review fixes (2026-11-06):**
+
+- `ADDITIONAL-PERMISSION.md` allows internal use at any organisation, including a company.
+- `ADMIN.md`: data flow, the risks the router can't remove, and an approval checklist for admins.
+- The dashboard can no longer add or change an `auth.command`. It runs a shell command, so only the config file can set one.
+- SECURITY.md lists the risks that remain, and says plainly that the Team/Enterprise opt-in can't be checked.
+- README says plainly that it isn't a multi-vendor router, and links the LiteLLM gateway example.
+- Release tags are signed.
+- The dashboard app's "couldn't start" alert on macOS no longer keeps the launch script running until it's dismissed. This also fixes the macOS CI job, which hung on it until timeout.
+
 **First-run experience (2026-11-06)**
 
 - **`./install.sh`:**

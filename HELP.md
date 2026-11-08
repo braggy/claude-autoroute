@@ -45,7 +45,7 @@ If Claude Code signs you in with your company's Claude account, follow these ste
 1. **Get your admin's OK first.** Team and Enterprise logins may only go through a tool like this if your organization allows it. Until you confirm that, autoroute refuses the login and sends nothing. "What do I ask my admin?" has a message you can send.
 2. **Check Node.js.** Run `node -v`. You need version 20 or later. If your company uses a web proxy (`HTTPS_PROXY` is set), you need 22.21 or later.
 3. **Install:** in the downloaded folder, run `./install.sh`. If it asks you to add a folder to your PATH, run the line it shows, then open a new terminal.
-4. **Set up:** when asked "How does Claude Code sign you in?", choose **Company login: Claude Team or Enterprise**. When asked if your admin approved it, answer **y** only if they have. Accept the other defaults.
+4. **Set up:** when asked "How does Claude Code sign you in?", choose **Company login: Claude Team or Enterprise**. When asked if your admin approved it, answer **y** only if they have. autoroute can't check this, so it relies on your answer. Accept the other defaults.
 5. **Self-test:** it sends one tiny message through Claude Code, at well under a cent. It should end with "All good". If it doesn't, see "The self-test failed".
 6. **Day 1, shadow mode:** start Claude Code with `claude-auto` and work as usual. Nothing changes: the status line shows 👁 and what routing would have picked.
 7. **Day 2, turn it on** if the numbers look good: `autoroute shadow off`. Then follow "Your first week: how do I know it's working?".
@@ -54,7 +54,7 @@ To undo at any time, run plain `claude` instead of `claude-auto`. Or run `autoro
 
 ### What do I ask my admin?
 
-Something like this, which you can copy and edit:
+Something like this, which you can copy and edit. Send [ADMIN.md](ADMIN.md) with it: it explains where data goes and has an approval checklist.
 
 > I'd like to use claude-autoroute, a source-available tool that runs only on my laptop, with Claude Code. It picks a cheaper Claude model (Haiku or Sonnet) for simple messages, to make our Claude Code usage go further. It runs at 127.0.0.1 and sends requests only to Anthropic, using my normal Claude Code login. It doesn't store prompts or code, and it follows our organization's allowed-models settings. Is it OK to use it with my Enterprise login?
 

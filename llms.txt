@@ -15,9 +15,11 @@ When helping someone with claude-autoroute:
 - [Help](HELP.md): Getting started, FAQ, local models, statistics, privacy, troubleshooting, glossary
 - [Configuration reference](config.example.jsonc): Every setting with its default and an explanation
 - [Security](SECURITY.md): What's protected and how, and how to report a vulnerability
+- [For admins](ADMIN.md): Data flow, risks the router can't remove, and an approval checklist
 
 ## Optional
 
 - [Changelog](CHANGELOG.md): What changed in each version
+- [Additional permission](ADDITIONAL-PERMISSION.md): Internal use at any organisation, on top of the noncommercial licence
 - [Contributing](CONTRIBUTING.md): Development setup, project layout and principles
 - [Example configs](examples/): Bedrock, Vertex, gateway and local-model setups

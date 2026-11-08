@@ -25,9 +25,11 @@ export const DOCS = [
   ["HELP.md", "Help", "Getting started, FAQ, local models, statistics, privacy, troubleshooting, glossary"],
   ["config.example.jsonc", "Configuration reference", "Every setting with its default and an explanation"],
   ["SECURITY.md", "Security", "What's protected and how, and how to report a vulnerability"],
+  ["ADMIN.md", "For admins", "Data flow, risks the router can't remove, and an approval checklist"],
 ];
 export const OPTIONAL = [
   ["CHANGELOG.md", "Changelog", "What changed in each version"],
+  ["ADDITIONAL-PERMISSION.md", "Additional permission", "Internal use at any organisation, on top of the noncommercial licence"],
   ["CONTRIBUTING.md", "Contributing", "Development setup, project layout and principles"],
   ["examples/", "Example configs", "Bedrock, Vertex, gateway and local-model setups"],
 ];

@@ -375,6 +375,8 @@ async function handle(ctx, req, res) {
   // Which login is Claude Code using? Subscription logins are refused unless allowed.
   const kind = credentialKind(req.headers);
   if (kind !== "none") ctx.credential = kind;
+  // Remembered (kind only, never the credential) so claude-auto can pick the right mode next time.
+  if (kind !== "none" && ctx.state.login !== kind) ctx.writeState({ login: kind });
   if (kind === "subscription" && !subscriptionAllowed(cfg)) {
     if (ctx.state.blocked !== "subscription") { ctx.log("refused a Claude subscription login (see subscriptionLogin in the config)"); ctx.writeState({ blocked: "subscription" }); }
     req.resume();

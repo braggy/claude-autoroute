@@ -4,6 +4,17 @@
 
 First release.
 
+**Subscription mode for Claude Free, Pro and Max (2026-11-08)**
+
+Pro and Max logins can't be routed, so `claude-auto` used to start Claude Code and then refuse every request. Now:
+
+- **`"mode": "auto"`** (new default): `claude-auto` detects a subscription login (never reading a token) and runs Claude Code straight to Anthropic, without the router. `autoroute mode [auto|router|subscription]` shows or sets it.
+- **Starting model:** in subscription mode, `claude-auto "<prompt>"` starts Claude Code on the model the prompt needs (`--model`), honoring `allowedTiers`, your organization's `availableModels` and `!opus`-style tags. `subscription.startModel` sets the model for chats started without a prompt (`opusplan` included).
+- **Model tips:** `autoroute hints install` adds a local Claude Code hook that suggests `/model` switches; quiet in long chats and never repeated. Shown in the status line too.
+- **`autoroute usage`:** usage by model from Claude Code's own transcripts (any login), the last 5 hours, and an estimate of what better-fitting models would have used.
+- **Setup:** "Personal Claude Pro or Max" now sets up subscription mode instead of stopping. Unapproved Team/Enterprise logins fall back to it as well. `doctor`, `selftest` and the dashboard explain the mode.
+- The router remembers the kind of login it last saw (never the credential), so `claude-auto` can choose the mode.
+
 **Licence (2026-11-06):** PolyForm Noncommercial 1.0.0, copyright Steve Bragg, replacing MIT. Contributions are licensed to the maintainer under MIT (see `CONTRIBUTING.md`).
 
 **First-run experience (2026-11-06)**

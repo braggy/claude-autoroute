@@ -39,8 +39,9 @@ CLI=${sq(cli)}
 ${autorouteHome ? `export AUTOROUTE_HOME=${sq(autorouteHome)}\n` : ""}
 fail() {
   MSG="autoroute couldn't start: $1. Run 'autoroute app install' again from a terminal."
-  if command -v osascript >/dev/null 2>&1; then osascript -e "display alert \\"autoroute\\" message \\"$MSG\\"" >/dev/null 2>&1
-  elif command -v notify-send >/dev/null 2>&1; then notify-send "autoroute" "$MSG"
+  # In the background, so the script exits even if nobody clicks OK (the alert closes itself after 2 minutes).
+  if command -v osascript >/dev/null 2>&1; then osascript -e "display alert \\"autoroute\\" message \\"$MSG\\" giving up after 120" </dev/null >/dev/null 2>&1 &
+  elif command -v notify-send >/dev/null 2>&1; then notify-send "autoroute" "$MSG" </dev/null >/dev/null 2>&1 &
   fi
   exit 1
 }

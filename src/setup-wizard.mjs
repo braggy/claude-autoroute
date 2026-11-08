@@ -5,6 +5,7 @@ import { configPath, buildConfig, validateConfig } from "./config.mjs";
 import { readUserConfig, saveUserConfig, applyQuick } from "./quick.mjs";
 import { ensureSecret, secureHome } from "./util.mjs";
 import { installStatusline, statuslineState } from "./setup.mjs";
+import { installHints, hintsState } from "./subscription.mjs";
 
 export const LOGINS = {
   "api-key": "Claude API key (Claude Console)",
@@ -22,6 +23,7 @@ export function parseSetupArgs(args) {
   if (args.includes("--no-shadow")) o.shadow = false;
   if (args.includes("--shadow")) o.shadow = true;
   if (args.includes("--no-statusline")) o.statusline = false;
+  if (args.includes("--no-hints")) o.hints = false;
   if (args.includes("--no-selftest")) o.selftest = false;
   return o;
 }
@@ -44,11 +46,7 @@ export async function runSetup({ home, env = process.env, opts = {}, ask, print 
   const login = await q("login", "Your login", Object.keys(LOGINS), "unsure");
   if (!LOGINS[login]) { print(`Unknown login "${login}". Use one of: ${Object.keys(LOGINS).join(", ")}`); return { ok: false, stop: true }; }
 
-  if (login === "personal") {
-    print("\nautoroute can't be used with a personal Claude Pro or Max login. Anthropic doesn't allow third-party tools to");
-    print("route those requests. Nothing was changed. Keep using `claude` as normal, or use a Claude API key instead.");
-    return { ok: false, stop: true };
-  }
+  if (login === "personal") return subscriptionSetup({ home, env, q, print });
 
   const { user } = readUserConfig(home);
   let next = JSON.parse(JSON.stringify(user));
@@ -61,7 +59,9 @@ export async function runSetup({ home, env = process.env, opts = {}, ask, print 
       print("  -> Enterprise login allowed (subscriptionLogin: allow-team-enterprise).");
     } else {
       next.subscriptionLogin = "refuse";
-      print("  -> Left off. Ask your admin, then run: autoroute setup --login enterprise --admin-approved");
+      print("  -> Left off. Until then claude-auto uses subscription mode: it picks the starting model and");
+      print("     suggests /model switches, without touching your login. After approval, run:");
+      print("     autoroute setup --login enterprise --admin-approved");
     }
   } else if (login === "cloud") {
     print("\nAdd your provider on the dashboard's Providers page (autoroute ui), or copy one of the files in examples/.");
@@ -95,4 +95,34 @@ export async function runSetup({ home, env = process.env, opts = {}, ask, print 
   const st = await q("selftest", "\nRun a quick self-test now? It sends one tiny message through Claude Code (under a cent). (Y/n)", null, true);
   const wantsTest = st === true || (typeof st === "string" && !/^n/i.test(st));
   return { ok: true, config: built, login, shadow: shadowOn, selftest: wantsTest && !(login === "enterprise" && next.subscriptionLogin === "refuse") };
+}
+
+// Personal Pro or Max: the router may not carry the login, so set up subscription mode,
+// where Claude Code talks to Anthropic directly and autoroute only advises.
+async function subscriptionSetup({ home, env, q, print }) {
+  print("\nPro and Max logins can't go through a routing tool (Anthropic doesn't allow it), so autoroute");
+  print("uses subscription mode: Claude Code signs in and talks to Anthropic directly, exactly as with");
+  print("`claude`. autoroute never sees your login or your messages. It:");
+  print("  - picks the model Claude Code starts on, from the prompt you start with (claude-auto \"...\")");
+  print("  - can suggest a /model switch when a message looks easier or harder than the current model");
+  print("  - shows your usage by model: autoroute usage");
+  const { user } = readUserConfig(home);
+  const next = { ...JSON.parse(JSON.stringify(user)), mode: "subscription" };
+  delete next.subscriptionLogin;
+  const built = buildConfig(next, env);
+  const errors = validateConfig(built);
+  if (errors.length) { print(`\nNot saved, the config has problems:\n  - ${errors.join("\n  - ")}`); return { ok: false, stop: true }; }
+  secureHome(home);
+  saveUserConfig(home, next);
+  print(`\nSaved ${configPath(home)} (mode: subscription).`);
+
+  if (hintsState(env) === "none") {
+    const h = await q("hints", "\nShow model tips in Claude Code? A local hook; it sends nothing anywhere. (Y/n)", null, true);
+    if (h === true || (typeof h === "string" && !/^n/i.test(h))) print("  -> " + installHints(env).message);
+  }
+  if (statuslineState(env) === "none") {
+    const sl = await q("statusline", "\nShow the current model and tips in Claude Code's status line? (Y/n)", null, true);
+    if (sl === true || (typeof sl === "string" && !/^n/i.test(sl))) print("  -> " + installStatusline(env).message);
+  }
+  return { ok: true, config: built, login: "personal", subscription: true, shadow: false, selftest: false };
 }

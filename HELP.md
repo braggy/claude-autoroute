@@ -18,7 +18,25 @@ About five minutes, and nothing changes until you decide.
 4. **Use Claude Code as normal, but start it with `claude-auto`.** All the usual arguments work.
 5. **After a day,** run `autoroute stats` to see what routing would have saved. If you like it, run `autoroute shadow off`.
 
-On a work laptop with Claude Team or Enterprise, read "Set up on a work laptop (Claude Team or Enterprise)" first.
+On a work laptop with Claude Team or Enterprise, read "Set up on a work laptop (Claude Team or Enterprise)" first. On Claude Pro or Max, read "I have Claude Pro or Max".
+
+### I have Claude Pro or Max
+
+autoroute works in **subscription mode**. Anthropic doesn't allow third-party tools to route Free, Pro or Max logins, so autoroute doesn't: `claude-auto` starts Claude Code just like `claude`, and Claude Code signs in and talks to Anthropic directly. autoroute never sees your login or messages.
+
+What you get:
+
+- **The right starting model.** Start with your first message: `claude-auto "fix the typo in README"` starts on Haiku, and `claude-auto "work out why the tests deadlock"` starts on Opus. Add `!opus`, `!sonnet` or `!haiku` to choose yourself. With no message, Claude Code uses its own default, or `subscription.startModel` if you set it (`opusplan` is a good choice: Opus while planning, Sonnet while doing).
+- **Model tips.** Run `autoroute hints install`. When a message looks harder or easier than the current model, Claude Code shows a tip such as "/model haiku would use less of your plan's limits". You decide whether to switch. There are no "smaller model" tips in long chats, because switching re-reads the whole chat on the new model. Only want tips for stronger models? Set `subscription.hints` to `"upgrades"`.
+- **Usage by model.** Run `autoroute usage` (or `autoroute usage 30` for 30 days). It reads Claude Code's own transcripts on your computer and shows how your usage splits between Haiku, Sonnet and Opus, the last 5 hours (the window plan limits reset on), and roughly how much less you'd use by starting messages on the model they need.
+
+What you don't get: per-message switching and failover. Those need the router, which needs a Claude API key, Bedrock or Vertex.
+
+To set it up, run `autoroute setup` and choose **Personal Claude Pro or Max**. You don't have to, though: `claude-auto` uses subscription mode automatically when it can tell you're signed in with a subscription. `autoroute mode` shows which mode it will use; `autoroute mode subscription` forces it.
+
+### How does claude-auto know I'm on a subscription?
+
+It looks for API-style credentials first (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, Bedrock or Vertex settings, a gateway in `ANTHROPIC_BASE_URL`, an `apiKeyHelper`). If there are none, it checks what the router saw last time, then the account summary Claude Code keeps in `~/.claude.json`. It never reads a token. If it can't tell, it uses the router, which refuses a subscription login and remembers it, so the next `claude-auto` starts in subscription mode. Set `"mode"` to skip the guessing.
 
 ### Set up on a work laptop (Claude Team or Enterprise)
 
@@ -86,7 +104,7 @@ What to do with the result:
 
 It's built for the **Claude Code CLI** on **macOS or Linux**, signed in with a **Claude API key**, **Amazon Bedrock**, **Google Vertex AI**, or a **company LLM gateway**.
 
-It doesn't work with Claude **Free, Pro or Max** subscription logins: Anthropic doesn't allow third-party tools to route those. **Team or Enterprise** logins need your admin's approval. It doesn't work with the Claude desktop app, claude.ai on the web, or the mobile apps. The README's "What's supported" section has the full list.
+With Claude **Free, Pro or Max** subscription logins it works in subscription mode only: Anthropic doesn't allow third-party tools to route those, so autoroute picks the starting model and gives tips instead (see "I have Claude Pro or Max"). **Team or Enterprise** logins need your admin's approval. It doesn't work with the Claude desktop app, claude.ai on the web, or the mobile apps. The README's "What's supported" section has the full list.
 
 ## Using it
 
@@ -167,6 +185,7 @@ Two other states you may see:
 
 - **👁 shadow · would use haiku · would save $0.40 today** means shadow mode is on. Claude Code keeps its own model, and this shows what routing would have picked. Turn routing on with `autoroute shadow off`.
 - **⏸ auto-route paused** means routing is paused. Undo with `autoroute resume` or the Quick settings.
+- **🟣 opus · subscription mode · 💡 /model haiku** means `claude-auto` is in subscription mode. It shows Claude Code's own model and, if there is one, the latest model tip for this chat.
 - **auto-route off** means this Claude Code session didn't start through `claude-auto`, so the router isn't involved.
 
 It updates after each message and reads a small file the router keeps up to date, so it never slows Claude Code down.
@@ -290,7 +309,7 @@ Check the **Prices** page. Prices change, and the built-in ones are list prices 
 
 ### I'm on a subscription plan. What do the dollar figures mean?
 
-They're calculated at API list prices, as if you paid per token. They're still a fair way to compare how much routing reduces usage.
+They're calculated at API list prices, as if you paid per token. They're still a fair way to compare how much routing reduces usage. On Pro or Max, `autoroute usage` uses the same prices to weigh each model's share of your usage, since Anthropic doesn't publish how plan limits weigh each model.
 
 ### I'm on Claude Enterprise with credit or spend limits. Does this help?
 
@@ -364,6 +383,7 @@ After changing these, run `autoroute restart`.
 
 Claude Code is signed in with a Claude subscription, and Anthropic doesn't allow third-party tools to route Free, Pro or Max credentials. Your options:
 
+- Run `claude-auto` again. With the default `"mode": "auto"`, it now knows you're on a subscription and starts in subscription mode (see "I have Claude Pro or Max"). Or run `autoroute mode subscription`.
 - Sign in with a Claude API key instead: run `/logout` in Claude Code, then set `ANTHROPIC_API_KEY`.
 - Use Bedrock or Vertex.
 - Run plain `claude` without claude-autoroute.
@@ -437,6 +457,10 @@ The **primary** is where requests normally go. **Backups** take over, in order, 
 ### Local model
 
 An open-source model running on your own computer, through Ollama, LM Studio or llama.cpp. claude-autoroute can send easy tasks to it for free. It isn't Claude.
+
+### Subscription mode
+
+How `claude-auto` runs Claude Code for Claude Free, Pro and Max logins: straight to Anthropic, without the router. autoroute only picks the starting model, suggests `/model` switches and reports usage by model.
 
 ### Passthrough
 

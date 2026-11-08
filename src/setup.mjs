@@ -8,6 +8,7 @@ import { backendInfo } from "./secrets.mjs";
 import { health, onPath, proxyVar, envProxySupported, ROOT, VERSION } from "./util.mjs";
 import { appState } from "./launcher.mjs";
 import { readAvailableModels, defaultPolicyPaths } from "./policy.mjs";
+import { resolveMode, hintsState } from "./subscription.mjs";
 
 export function settingsPath(env = process.env) {
   return path.join(env.CLAUDE_CONFIG_DIR || path.join(env.HOME || os.homedir(), ".claude"), "settings.json");
@@ -72,8 +73,14 @@ export async function runChecks(home, env = process.env, { probeCredentials = tr
     catch (e) { add("fail", `${name}: ${e.message}`); }
   }
   if (!insideRouter) {
+    const m = resolveMode(cfg, env, home);
+    add("ok", `claude-auto runs in ${m.mode} mode (${m.why})`);
+    if (m.mode === "subscription") {
+      add("ok", "Subscription mode: Claude Code talks to Anthropic directly; autoroute only picks the starting model and gives tips");
+      hintsState(env) === "installed" ? add("ok", "Model tips installed") : add("info", "Optional: model tips that suggest /model switches", "autoroute hints install");
+    }
     cfg.subscriptionLogin === "refuse"
-      ? add("ok", "Claude subscription logins are refused (Free/Pro/Max can't be routed); use an API key, Bedrock or Vertex")
+      ? add("ok", "The router refuses Claude subscription logins (Free/Pro/Max can't be routed); subscription mode covers them")
       : add("warn", "Subscription logins allowed: only correct for Team/Enterprise plans whose admin approved routing tools");
     const av = readAvailableModels(defaultPolicyPaths(env));
     add("ok", av.list ? `Model restrictions from ${av.source} will be honored: ${av.list.join(", ")}` : "No model restrictions found in Claude Code settings");

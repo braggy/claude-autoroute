@@ -169,10 +169,12 @@ test("setup: Enterprise with admin approval allows the login; without it, stays 
   assert.ok(lines.some((l) => /What do I ask my admin/.test(l)));
 });
 
-test("setup: personal Pro/Max stops without changing anything; answers can come from prompts", async () => {
+test("setup: personal Pro/Max gets subscription mode (no router, no self-test); answers can come from prompts", async () => {
   const { env, home } = sandboxEnv();
-  const r = await runSetup({ home, env, opts: { login: "personal" }, print: () => {} });
-  assert.equal(r.ok, false); assert.ok(!fs.existsSync(path.join(home, "config.jsonc")));
+  const r = await runSetup({ home, env, opts: { login: "personal", yes: true }, print: () => {} });
+  assert.equal(r.ok, true); assert.equal(r.subscription, true); assert.equal(r.selftest, false);
+  assert.equal(readCfg(home).mode, "subscription");
+  assert.equal(readCfg(home).subscriptionLogin, undefined, "never allows the login itself through the router");
   const c = sandboxEnv();
   const asked = [];
   const answers = { "Your login": "api-key", "Shadow mode (Y/n)": "n" };

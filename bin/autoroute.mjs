@@ -21,6 +21,9 @@ Usage: autoroute <command>
   ui [--no-open]       open the dashboard in your browser (setup, providers, savings, tuning)
   app install [--dock] add an "autoroute" app icon that opens the dashboard (macOS, Linux)
   app remove           remove it again
+  mode [auto|router|subscription]  how claude-auto runs Claude Code (no argument: show the current mode)
+  hints install|remove model tips in Claude Code for subscription mode (a local hook)
+  usage [days] [--json] usage by model from Claude Code's own transcripts (any login, incl. Pro/Max)
   pause | resume       stop / restart changing models (failover keeps working)
   shadow on|off        decide but don't change models: see what routing would save, risk-free
   local on|off         use the free local model for easy tasks, or not
@@ -203,10 +206,43 @@ async function main() {
       rl?.close();
       if (!r.ok) { process.exitCode = r.stop ? 0 : 1; return; }
       if (r.selftest) { console.log(""); return selftestCmd(); }
+      if (r.subscription) { console.log("\nDone. Start Claude Code with:  claude-auto   (or claude-auto \"your first message\")\nSee your usage by model with:  autoroute usage\n"); return; }
       console.log(`\nDone. From now on, start Claude Code with:  claude-auto\n${r.shadow ? "Check what it would save any time with:      autoroute stats\n" : ""}`);
       return;
     }
     case "selftest": return selftestCmd();
+    case "mode": {
+      const { resolveMode, MODES } = await import("../src/subscription.mjs");
+      if (!args[0]) {
+        const cfg = cfgOrDie();
+        const r = resolveMode(cfg, process.env, home);
+        console.log(`mode setting: ${cfg.mode}\nclaude-auto will use: ${r.mode} mode (${r.why})`);
+        console.log(r.mode === "subscription"
+          ? "  Claude Code talks to Anthropic directly; autoroute picks the starting model and suggests /model switches."
+          : "  Claude Code goes through the local router, which picks the model for each message.");
+        return;
+      }
+      if (!MODES.includes(args[0])) { console.log("usage: autoroute mode [auto|router|subscription]"); process.exitCode = 1; return; }
+      return quick({ type: "claude-auto-mode", value: args[0] }, {
+        auto: "Mode: auto. Subscription logins get subscription mode; API keys, Bedrock, Vertex and gateways get the router.",
+        router: "Mode: router. claude-auto always runs Claude Code through the router.",
+        subscription: "Mode: subscription. claude-auto runs Claude Code straight to Anthropic, picks the starting model, and (with `autoroute hints install`) suggests /model switches.",
+      }[args[0]]);
+    }
+    case "hints": {
+      const { installHints, removeHints } = await import("../src/subscription.mjs");
+      if (args[0] === "install") console.log(installHints().message);
+      else if (args[0] === "remove") console.log(removeHints().message);
+      else { console.log("usage: autoroute hints install|remove"); process.exitCode = 1; }
+      return;
+    }
+    case "usage": {
+      const { usageReport, printUsage } = await import("../src/usage.mjs");
+      const days = Number(args.find((a) => /^\d+$/.test(a))) || 7;
+      const r = usageReport(cfgOrDie(), { days });
+      if (args.includes("--json")) console.log(JSON.stringify(r, null, 2)); else printUsage(r);
+      return;
+    }
     case "shadow": {
       if (!["on", "off"].includes(args[0])) { console.log("usage: autoroute shadow on|off"); process.exitCode = 1; return; }
       return quick({ type: "shadow", value: args[0] === "on" }, args[0] === "on"
@@ -297,6 +333,13 @@ function openBrowser(url) {
 async function selftestCmd() {
   const { selftest } = await import("../src/selftest.mjs");
   const cfg = cfgOrDie();
+  const { resolveMode } = await import("../src/subscription.mjs");
+  const m = resolveMode(cfg, process.env, home);
+  if (m.mode === "subscription") {
+    console.log(`autoroute selftest: claude-auto uses subscription mode (${m.why}), so the router isn't involved and there's`);
+    console.log("nothing to test. Claude Code talks to Anthropic directly. Check your setup with: autoroute doctor");
+    return;
+  }
   console.log("autoroute selftest\n");
   const r = await selftest({ cfg, home, print: (l) => console.log(l) });
   if (r.ok) {

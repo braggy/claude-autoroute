@@ -24,7 +24,8 @@ export function credentialKind(headers = {}) {
 export const SUBSCRIPTION_REFUSED =
   "claude-autoroute can't carry a Claude subscription login. Anthropic does not allow third-party tools to route " +
   "requests through Free, Pro or Max plan credentials. Use a Claude API key (Claude Console), Amazon Bedrock or Google " +
-  "Vertex AI instead, or run plain `claude` without autoroute. On a Team or Enterprise plan whose admin has approved " +
+  "Vertex AI instead. Or just run claude-auto again: it now starts Claude Code in subscription mode, which never touches " +
+  "your login and only picks the model and suggests /model switches (`autoroute mode subscription`). On a Team or Enterprise plan whose admin has approved " +
   "routing tools, set \"subscriptionLogin\": \"allow-team-enterprise\" in ~/.claude-autoroute/config.jsonc.";
 
 export function subscriptionAllowed(cfg) {

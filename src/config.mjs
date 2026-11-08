@@ -46,7 +46,7 @@ export const DEFAULTS = {
     pickStartModel: true,          // pick the starting model from the prompt you launch with
     startModel: "default",         // with no prompt: "default" (Claude Code's choice), haiku, sonnet, opus or opusplan
     hints: "all",                  // model tips in Claude Code: "all", "upgrades" (only stronger models) or "off"
-    downgradeMaxContextTokens: 30000, // no "use a smaller model" tips in chats longer than this
+    downgradeMaxContextTokens: 30000, // no "use a smaller model" tips once the chat has grown past this
   },
   // Pause routing: requests go through unchanged (failover still works).
   paused: false,

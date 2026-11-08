@@ -136,24 +136,55 @@ export function launchPlan(cfg, args = [], permitted = TIERS) {
 }
 
 // ---------------------------------------------------------------- hints ---
-/** Model and context size of the latest reply in a Claude Code transcript (reads only its tail). */
+const contextOf = (u = {}) => (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+const assistantReply = (line) => {
+  if (!line.includes('"assistant"')) return null;
+  let j; try { j = JSON.parse(line); } catch { return null; }
+  const m = j?.message;
+  return j?.type === "assistant" && m?.model && m.model !== "<synthetic>" ? m : null;
+};
+// Claude Code logs a /model switch as local command output: "Set model to `Opus 5.5` ...".
+const modelSwitch = (line) => {
+  if (!line.includes("Set model to")) return null;
+  let j; try { j = JSON.parse(line); } catch { return null; }
+  const c = j?.message?.content;
+  const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => b?.text || "").join("") : "";
+  const m = text.match(/<local-command-stdout>[^<]*Set model to\W*([^`*\n]+)/);
+  return m && tierOf(m[1]) ? m[1].trim() : null;
+};
+
+function readChunk(fd, pos, len) {
+  const buf = Buffer.alloc(len);
+  fs.readSync(fd, buf, 0, len, pos);
+  return buf.toString("utf8").split("\n");
+}
+
+/**
+ * The chat's current model and how much it has grown, from a Claude Code transcript.
+ * Reads only the start and end of the file. contextTokens counts the chat itself: the
+ * latest reply's context minus the first reply's, which is mostly Claude Code's own
+ * system prompt and tools (about 40k tokens before you type anything).
+ */
 export function transcriptTail(file, maxBytes = 256 * 1024) {
   try {
     const fd = fs.openSync(file, "r");
     try {
       const size = fs.fstatSync(fd).size;
       const len = Math.min(size, maxBytes);
-      const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, size - len);
-      const lines = buf.toString("utf8").split("\n");
+      let first = null;
+      // Claude Code writes ~70 KB of setup records before the first reply, so look well past that.
+      for (const line of readChunk(fd, 0, Math.min(size, 1024 * 1024))) { const m = assistantReply(line); if (m) { first = m; break; } }
+      const lines = readChunk(fd, size - len, len);
+      let switched = null;
       for (let i = lines.length - 1; i >= 0; i--) {
-        if (!lines[i].includes('"assistant"')) continue;
-        let j; try { j = JSON.parse(lines[i]); } catch { continue; }
-        const m = j?.message;
-        if (j?.type !== "assistant" || !m?.model || m.model === "<synthetic>") continue;
-        const u = m.usage || {};
-        return { model: m.model, tier: tierOf(m.model), contextTokens: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) };
+        switched ||= modelSwitch(lines[i]);
+        const m = assistantReply(lines[i]);
+        if (!m) continue;
+        const total = contextOf(m.usage);
+        const model = switched || m.model;
+        return { model, tier: tierOf(model), contextTokens: Math.max(0, total - (first ? contextOf(first.usage) : 0)), totalTokens: total };
       }
+      if (switched) return { model: switched, tier: tierOf(switched), contextTokens: 0, totalTokens: 0 };
     } finally { fs.closeSync(fd); }
   } catch {}
   return null;
@@ -182,11 +213,12 @@ export function hintFor({ prompt, current, last, cfg, permitted = TIERS }) {
   const up = TIERS.indexOf(tier) > TIERS.indexOf(cur);
   if (!up && s.hints === "upgrades") return { tier: null };
   // Switching models re-reads the whole chat on the new model. In a long chat that costs
-  // more of your limits than a cheaper model saves on one message.
+  // more of your limits than a cheaper model saves on one message. (contextTokens is the
+  // chat's growth, so Claude Code's own fixed system prompt doesn't count.)
   if (!up && (current.contextTokens || 0) > s.downgradeMaxContextTokens) return { tier: null };
   if (tier === last) return { tier, quiet: true };
   const message = up
-    ? `autoroute: this looks like a ${TIER_NAME[tier]}-level task (${w.reason}). For a stronger answer, type /model ${tier} and ask again.`
+    ? `autoroute: this looks like ${tier === "opus" ? "an" : "a"} ${TIER_NAME[tier]}-level task (${w.reason}). For a stronger answer, type /model ${tier} and ask again.`
     : `autoroute: this looks simple (${w.reason}). /model ${tier} would use less of your plan's limits; /model ${cur} switches back.`;
   return { tier, message };
 }

@@ -104,7 +104,7 @@ test("start model: honors allowedTiers and your organization's availableModels",
 // ---------------------------------------------------------------- hints ---
 test("hints: suggest stronger and lighter models, once, and stay quiet when it wouldn't pay", () => {
   const up = hintFor({ prompt: "refactor the architecture to fix the race condition", current: { tier: "sonnet", contextTokens: 1000 }, cfg });
-  assert.equal(up.tier, "opus"); assert.match(up.message, /\/model opus/);
+  assert.equal(up.tier, "opus"); assert.match(up.message, /looks like an Opus-level task.*\/model opus/);
   const down = hintFor({ prompt: "fix the typo", current: { tier: "opus", contextTokens: 1000 }, cfg });
   assert.equal(down.tier, "haiku"); assert.match(down.message, /\/model haiku.*\/model opus/);
   assert.equal(hintFor({ prompt: "fix the typo", current: { tier: "opus", contextTokens: 1000 }, last: "haiku", cfg }).message, undefined, "no repeats");
@@ -128,10 +128,19 @@ const now = Date.now();
 const u = (text) => ({ type: "user", message: { role: "user", content: text }, timestamp: new Date(now - 60000).toISOString() });
 const a = (id, model, usage, ago = 30000) => ({ type: "assistant", message: { id, model, usage }, timestamp: new Date(now - ago).toISOString() });
 
-test("hints: the chat's current model comes from the transcript tail", () => {
+// The /model command as real Claude Code 2.1 writes it to the transcript.
+const switchTo = (name) => ({ type: "user", message: { role: "user", content: `<local-command-stdout>Set model to \`${name}\` and saved as your default for new sessions</local-command-stdout>` } });
+
+test("hints: the chat's model and growth come from the transcript, /model switches included", () => {
   const { env } = sandbox();
-  const f = transcript(env.CLAUDE_CONFIG_DIR, [u("hi"), a("m1", "claude-opus-5-5", { input_tokens: 10, cache_read_input_tokens: 500, output_tokens: 5 }), a("m2", "<synthetic>", {})]);
-  assert.deepEqual(transcriptTail(f), { model: "claude-opus-5-5", tier: "opus", contextTokens: 510 });
+  const setup = { type: "attachment", content: "x".repeat(100 * 1024) }; // real transcripts start with ~70 KB of these
+  const f = transcript(env.CLAUDE_CONFIG_DIR, [setup, u("hi"), a("m0", "claude-haiku-5-5", { input_tokens: 2, cache_creation_input_tokens: 40000 }),
+    u("more"), a("m1", "claude-opus-5-5", { input_tokens: 10, cache_read_input_tokens: 40500, output_tokens: 5 }), a("m2", "<synthetic>", {})]);
+  assert.deepEqual(transcriptTail(f), { model: "claude-opus-5-5", tier: "opus", contextTokens: 508, totalTokens: 40510 }, "Claude Code's own ~40k system prompt isn't chat growth");
+  fs.appendFileSync(f, JSON.stringify(u("x")) + "\n" + JSON.stringify(switchTo("Haiku 5.5")) + "\n");
+  assert.equal(transcriptTail(f).tier, "haiku", "a /model switch after the last reply wins");
+  const g = transcript(path.join(env.HOME, "b"), [switchTo("Sonnet 5.5")]);
+  assert.equal(transcriptTail(g).tier, "sonnet");
   assert.equal(transcriptTail(path.join(env.HOME, "missing.jsonl")), null);
 });
 

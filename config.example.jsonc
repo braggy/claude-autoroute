@@ -49,8 +49,9 @@
     // Model tips shown in Claude Code (needs `autoroute hints install`): "all",
     // "upgrades" (only suggest stronger models) or "off".
     "hints": "all",
-    // No "use a smaller model" tips once a chat is longer than this many tokens:
-    // switching re-reads the whole chat on the new model, which costs more than it saves.
+    // No "use a smaller model" tips once the chat itself has grown past this many tokens
+    // (Claude Code's own system prompt isn't counted): switching re-reads the whole
+    // chat on the new model, which costs more than it saves.
     "downgradeMaxContextTokens": 30000
   },
 

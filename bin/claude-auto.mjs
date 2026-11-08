@@ -32,12 +32,13 @@ if (mode === "subscription") {
   args = plan.args;
   if (plan.model) env.AUTOROUTE_START_MODEL = plan.model;
   if (process.stderr.isTTY && !env.AUTOROUTE_QUIET) {
-    const notice = path.join(home, "subscription-mode-seen");
-    if (!fs.existsSync(notice)) {
+    // Shown once: creating the marker atomically ("wx") tells us whether this is the first time.
+    let first = false;
+    try { fs.mkdirSync(home, { recursive: true, mode: 0o700 }); fs.writeFileSync(path.join(home, "subscription-mode-seen"), "", { mode: 0o600, flag: "wx" }); first = true; } catch {}
+    if (first) {
       console.error(`claude-auto: subscription mode (${why}). Claude Code signs in and talks to Anthropic directly;\n` +
         "autoroute never sees your login or messages. It picks the starting model and can suggest /model switches.\n" +
         "Tips: autoroute hints install · usage by model: autoroute usage · more: HELP.md \"I have Claude Pro or Max\"");
-      try { fs.mkdirSync(home, { recursive: true, mode: 0o700 }); fs.writeFileSync(notice, "", { mode: 0o600 }); } catch {}
     }
     if (plan.model) console.error(`claude-auto: starting on ${plan.model} (${plan.reason})`);
   }

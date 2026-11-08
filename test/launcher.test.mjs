@@ -32,21 +32,22 @@ test("the launch script fails cleanly if Node.js moved", { skip: process.platfor
   const { root } = sandbox();
   const script = path.join(root, "open-dashboard");
   fs.writeFileSync(script, launchScript({ node: "/nonexistent/node", cli: "/nonexistent/cli" }), { mode: 0o700 });
-  const r = spawnSync(script, { env: { HOME: root, PATH: "/usr/bin:/bin" } });
+  const r = spawnSync(script, { env: { HOME: root, PATH: "/usr/bin:/bin" }, timeout: 10000 });
   assert.equal(r.status, 1);
 });
 
-test("the launch script doesn't wait for its error alert to be dismissed", { skip: process.platform === "win32" }, () => {
+test("the launch script's error alert never blocks it (nobody may be there to click OK)", { skip: process.platform === "win32" }, () => {
   const { root } = sandbox();
+  // A stand-in for macOS's osascript whose alert is never dismissed.
   const bin = path.join(root, "bin"); fs.mkdirSync(bin);
-  // Stands in for a macOS alert nobody clicks (e.g. on a headless CI runner).
-  fs.writeFileSync(path.join(bin, "osascript"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "osascript"), "#!/bin/sh\nexec sleep 30\n", { mode: 0o755 });
   const script = path.join(root, "open-dashboard");
   fs.writeFileSync(script, launchScript({ node: "/nonexistent/node", cli: "/nonexistent/cli" }), { mode: 0o700 });
   const started = Date.now();
   const r = spawnSync(script, { env: { HOME: root, PATH: `${bin}:/usr/bin:/bin` }, timeout: 10000 });
-  assert.equal(r.status, 1);
-  assert.ok(Date.now() - started < 5000, "exited without waiting for the alert");
+  assert.equal(r.status, 1, "exits with an error instead of waiting for the alert");
+  assert.ok(Date.now() - started < 5000);
+  assert.match(fs.readFileSync(script, "utf8"), /giving up after 120/, "the alert also closes itself");
 });
 
 test("Linux: desktop entry and icons in the standard places", () => {

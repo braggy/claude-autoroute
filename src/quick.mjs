@@ -58,7 +58,7 @@ function set(o, p, v) {
 
 /**
  * action: { type: "pause", value: bool } | { type: "shadow", value: bool } | { type: "mode", value: "on"|"shadow"|"paused" }
- *       | { type: "local", value: bool }
+ *       | { type: "claude-auto-mode", value: "auto"|"router"|"subscription" } | { type: "local", value: bool }
  *       | { type: "provider", name, value: bool } | { type: "priority", name }
  * effective: the full current config (for provider lists and defaults).
  */
@@ -71,6 +71,10 @@ export function applyQuick(user, effective, action) {
       if (!["on", "shadow", "paused"].includes(action.value)) throw Object.assign(new Error(`unknown mode "${action.value}" (use on, shadow or paused)`), { status: 422 });
       u.paused = action.value === "paused";
       u.shadow = action.value === "shadow";
+      break;
+    case "claude-auto-mode": // how claude-auto runs Claude Code: auto | router | subscription
+      if (!["auto", "router", "subscription"].includes(action.value)) throw Object.assign(new Error(`unknown mode "${action.value}" (use auto, router or subscription)`), { status: 422 });
+      u.mode = action.value;
       break;
     case "local":
       if (action.value && !effective.providers[effective.local?.provider || "local"]) {

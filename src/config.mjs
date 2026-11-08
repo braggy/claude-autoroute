@@ -35,6 +35,19 @@ export const DEFAULTS = {
   // "allow-team-enterprise": you confirm you're on a Team or Enterprise plan whose
   // admin has approved routing tools. (The router can't tell plan types apart.)
   subscriptionLogin: "refuse",
+  // How claude-auto runs Claude Code:
+  //   "router":       through the local router (API key, Bedrock, Vertex, gateway)
+  //   "subscription": straight to Anthropic, untouched; autoroute only picks the starting
+  //                   model and suggests /model switches (for Free, Pro and Max logins)
+  //   "auto":         subscription mode when Claude Code is signed in with a subscription
+  //                   that the router may not carry, otherwise router mode
+  mode: "auto",
+  subscription: {
+    pickStartModel: true,          // pick the starting model from the prompt you launch with
+    startModel: "default",         // with no prompt: "default" (Claude Code's choice), haiku, sonnet, opus or opusplan
+    hints: "all",                  // model tips in Claude Code: "all", "upgrades" (only stronger models) or "off"
+    downgradeMaxContextTokens: 30000, // no "use a smaller model" tips once the chat has grown past this
+  },
   // Pause routing: requests go through unchanged (failover still works).
   paused: false,
   shadow: false,       // decide, but don't change the model: shows what routing would save
@@ -260,6 +273,12 @@ export function validateConfig(cfg) {
   }
   if (!["heuristic", "llm"].includes(cfg.classifier.type)) err(`classifier.type must be "heuristic" or "llm"`);
   if (typeof cfg.shadow !== "boolean") err("shadow must be true or false");
+  if (!["auto", "router", "subscription"].includes(cfg.mode)) err(`mode must be "auto", "router" or "subscription"`);
+  const S = cfg.subscription || {};
+  if (typeof S.pickStartModel !== "boolean") err("subscription.pickStartModel must be true or false");
+  if (!["default", "opusplan", ...TIERS].includes(S.startModel)) err(`subscription.startModel must be "default", "opusplan", ${TIERS.join(", ")}`);
+  if (!["all", "upgrades", "off"].includes(S.hints)) err(`subscription.hints must be "all", "upgrades" or "off"`);
+  if (!(S.downgradeMaxContextTokens >= 0)) err("subscription.downgradeMaxContextTokens must be 0 or more");
   if (!["refuse", "allow-team-enterprise"].includes(cfg.subscriptionLogin)) err(`subscriptionLogin must be "refuse" or "allow-team-enterprise"`);
   if (!Array.isArray(cfg.allowedTiers) || !cfg.allowedTiers.length || cfg.allowedTiers.some((t) => !TIERS.includes(t))) err(`allowedTiers must list one or more of ${TIERS.join(", ")}`);
   if (!["cost-aware", "always"].includes(cfg.switching.mode)) err(`switching.mode must be "cost-aware" or "always"`);

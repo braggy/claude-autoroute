@@ -29,6 +29,32 @@
   // plan, so this setting is your confirmation.
   "subscriptionLogin": "refuse",
 
+  // How claude-auto runs Claude Code. Quick switch: `autoroute mode <name>`.
+  //   "auto"         (default) subscription mode when Claude Code is signed in with a
+  //                  subscription the router may not carry, router mode otherwise
+  //   "router"       always through the local router
+  //   "subscription" always straight to Anthropic: your login and messages never go
+  //                  through autoroute. It only picks the model Claude Code starts on,
+  //                  suggests /model switches and reports usage by model.
+  "mode": "auto",
+
+  // Subscription mode (Claude Free, Pro and Max, or Team/Enterprise without approval).
+  "subscription": {
+    // Pick the starting model from the prompt you launch with: claude-auto "fix the typo".
+    // Your own --model, and -c / --resume, are always left alone.
+    "pickStartModel": true,
+    // Model to start on when you give no prompt: "default" (Claude Code's own choice),
+    // "haiku", "sonnet", "opus", or "opusplan" (Opus while planning, Sonnet otherwise).
+    "startModel": "default",
+    // Model tips shown in Claude Code (needs `autoroute hints install`): "all",
+    // "upgrades" (only suggest stronger models) or "off".
+    "hints": "all",
+    // No "use a smaller model" tips once the chat itself has grown past this many tokens
+    // (Claude Code's own system prompt isn't counted): switching re-reads the whole
+    // chat on the new model, which costs more than it saves.
+    "downgradeMaxContextTokens": 30000
+  },
+
   // Pause routing: Claude Code's requests go through unchanged (failover still works).
   // Quick switch: `autoroute pause` / `autoroute resume`, or the dashboard.
   "paused": false,

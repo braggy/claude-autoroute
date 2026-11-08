@@ -2,10 +2,11 @@
 // A stand-in for Claude Code in tests. Like the real one, it reads ANTHROPIC_BASE_URL and
 // ANTHROPIC_CUSTOM_HEADERS, sends a tool-enabled streaming request, and prints the reply.
 // FAKE_CLAUDE_LOGIN: "api-key" (default) | "subscription"
-// FAKE_CLAUDE_MODE:  "ok" (default) | "ignore-base-url" | "hang" | "fail-haiku"
+// FAKE_CLAUDE_MODE:  "ok" (default) | "ignore-base-url" | "hang" | "fail-haiku" | "echo" (print args and env, no request)
 const args = process.argv.slice(2);
 if (args[0] === "--version") { console.log("9.9.9 (Claude Code)"); process.exit(0); }
 const mode = process.env.FAKE_CLAUDE_MODE || "ok";
+if (mode === "echo") { console.log(JSON.stringify({ args, base: process.env.ANTHROPIC_BASE_URL || null, mode: process.env.AUTOROUTE_MODE || null, start: process.env.AUTOROUTE_START_MODEL || null })); process.exit(0); }
 if (mode === "hang") setInterval(() => {}, 1000);
 else {
   const model = args.includes("--model") ? args[args.indexOf("--model") + 1] : "default";

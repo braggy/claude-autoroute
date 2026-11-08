@@ -165,7 +165,7 @@ async function api(ctx, req, res, route) {
     const cred = ctx.credential;
     const credText = { "api-key": "Claude Code is using an API key", token: "Claude Code is using a gateway token", subscription: "Claude Code is using a Claude subscription login" }[cred];
     if (!cred) checks.unshift({ level: "info", text: "Login type: checked when Claude Code first connects" });
-    else if (cred === "subscription" && !subscriptionAllowed(cfg)) checks.unshift({ level: "fail", text: credText + ", which autoroute can't carry", fix: "Use an API key, Bedrock or Vertex. Team/Enterprise with admin approval: set subscriptionLogin to allow-team-enterprise", help: "claude-code-says-the-router-cant-carry-a-subscription-login" });
+    else if (cred === "subscription" && !subscriptionAllowed(cfg)) checks.unshift({ level: "fail", text: credText + ", which autoroute can't carry", fix: "Run claude-auto again: it starts in subscription mode (no router; it picks the starting model and gives tips). Or use an API key, Bedrock or Vertex. Team/Enterprise with admin approval: set subscriptionLogin to allow-team-enterprise", help: "claude-code-says-the-router-cant-carry-a-subscription-login" });
     else checks.unshift({ level: "ok", text: credText + (cred === "subscription" ? " (allowed as Team/Enterprise with admin approval)" : "") });
     const av = ctx.policy.available();
     const tiers = allowedTiers(ctx);

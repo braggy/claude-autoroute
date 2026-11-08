@@ -16,8 +16,9 @@ export const SUMMARY =
   "claude-autoroute is a local router for the Claude Code CLI on macOS and Linux. For each message it picks " +
   "Haiku, Sonnet or Opus (only switching when it saves money after prompt-cache costs), can send easy tasks to a " +
   "free local model, fails over to backup providers (Amazon Bedrock, Google Vertex AI, gateways), and measures what " +
-  "it saves. It works with Claude API keys, Bedrock, Vertex and company gateways; it refuses Claude Free, Pro and " +
-  "Max subscription logins, and Team/Enterprise logins need admin approval.";
+  "it saves. It works with Claude API keys, Bedrock, Vertex and company gateways. The router refuses Claude Free, Pro " +
+  "and Max subscription logins (Team/Enterprise need admin approval); for those, subscription mode runs Claude Code " +
+  "directly and only picks the starting model, suggests /model switches and reports usage by model.";
 
 export const DOCS = [
   ["README.md", "Overview", "What it does, what's supported, install, dashboard, failover, commands, configuration"],
